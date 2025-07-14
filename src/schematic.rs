@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Schematic {
     pub(crate) version: u16,
     pub(crate) dimensions: Dimensions,
@@ -162,6 +162,22 @@ impl From<u8> for SpawnProbability {
             127 => SpawnProbability::Always,
             v => SpawnProbability::Custom(v),
         }
+    }
+}
+
+impl From<SpawnProbability> for u8 {
+    fn from(value: SpawnProbability) -> Self {
+        match value {
+            SpawnProbability::Never => 9,
+            SpawnProbability::Always => 127,
+            SpawnProbability::Custom(v) => v,
+        }
+    }
+}
+
+impl From<&SpawnProbability> for u8 {
+    fn from(value: &SpawnProbability) -> Self {
+        u8::from(*value)
     }
 }
 
