@@ -18,7 +18,7 @@ use winnow::combinator::repeat;
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::literal;
 
-use crate::schematic::Dimensions;
+use crate::schematic::MapVector;
 use crate::schematic::Node;
 use crate::schematic::Schematic;
 use crate::schematic::SpawnProbability;
@@ -104,10 +104,12 @@ fn parse_version(stream: &mut &BStr) -> winnow::Result<u16> {
         .parse_next(stream)
 }
 
-fn parse_dimensions(stream: &mut &BStr) -> winnow::Result<Dimensions> {
+fn parse_dimensions(stream: &mut &BStr) -> winnow::Result<MapVector> {
     let (size_x, size_y, size_z) = (be_u16, be_u16, be_u16).parse_next(stream)?;
 
-    Ok((size_x, size_y, size_z).into())
+    (size_x, size_y, size_z)
+        .try_into()
+        .map_err(|err| ContextError::from_external_error(stream, err))
 }
 
 fn parse_layer_probabilities(

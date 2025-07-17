@@ -32,18 +32,18 @@ pub fn to_bytes(schematic: &Schematic) -> Vec<u8> {
     let mut node_data: Vec<u8> = Vec::with_capacity(schematic.num_nodes() * 4);
     node_data.extend(
         schematic
-            .nodes()
+            .annotated_nodes()
             .flat_map(|annotated_node| annotated_node.node.content_index.to_be_bytes()),
     );
 
-    node_data.extend(schematic.nodes().map(|annotated_node| {
+    node_data.extend(schematic.annotated_nodes().map(|annotated_node| {
         let node = annotated_node.node;
         (node.force_placement as u8) << 7 | u8::from(node.probability)
     }));
 
     node_data.extend(
         schematic
-            .nodes()
+            .annotated_nodes()
             .map(|annotated_node| annotated_node.node.param2),
     );
 
