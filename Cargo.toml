@@ -9,3 +9,10 @@ flate2 = "1.1.2"
 rstest = "0.25"
 thiserror = "2.0.12"
 winnow = "0.7.12"
+
+[dev-dependencies]
+criterion = "0.6.0"
+
+[[bench]]
+name = "benchmarks"
+harness = false
