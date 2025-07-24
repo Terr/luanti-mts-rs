@@ -52,14 +52,6 @@ impl Schematic {
         AnnotatedNodeIterator::from_schematic(self)
     }
 
-    pub fn content_id_for_name(&self, name: &str) -> Option<u16> {
-        self.content_names
-            .iter()
-            .enumerate()
-            .find(|(_index, content_name)| *content_name == name)
-            .map(|(index, _content_name)| index as u16)
-    }
-
     pub fn node_at(&self, coordinates: MapVector) -> Option<&Node> {
         self.nodes.get(coordinates.as_shape())
     }
@@ -92,13 +84,28 @@ impl Schematic {
         Ok(())
     }
 
-    /// Registers a content name in the `Schematic`. Returns the content index that `Nodes` in this
-    /// Schematic can point to.
-    pub fn add_content(&mut self, name: String) -> u16 {
-        // TODO Convert this field to a HashMap
-        self.content_names.push(name);
+    /// Registers a content name in the `Schematic`. Checks for duplicates.
+    ///
+    /// Returns the content index that `Nodes` in this Schematic can point to.
+    pub fn register_content(&mut self, name: String) -> u16 {
+        // TODO Convert this field to a HashMap? But that would not be good for
+        // `AnnotatedNodeIterator`
 
-        (self.content_names.len() - 1) as u16
+        match self.content_id_for_name(&name) {
+            None => {
+                self.content_names.push(name);
+                (self.content_names.len() - 1) as u16
+            }
+            Some(content_id) => content_id,
+        }
+    }
+
+    pub fn content_id_for_name(&self, name: &str) -> Option<u16> {
+        self.content_names
+            .iter()
+            .enumerate()
+            .find(|(_index, content_name)| *content_name == name)
+            .map(|(index, _content_name)| index as u16)
     }
 
     /// Starting at `from`, fills the given space with copies of the given `Node`.
@@ -508,7 +515,7 @@ mod tests {
                 .annotated_nodes()
                 .all(|node| node.content_name == "air")
         );
-        let node = Node::with_content_index(schematic.add_content("default:dirt".to_string()));
+        let node = Node::with_content_index(schematic.register_content("default:dirt".to_string()));
 
         schematic
             .fill(
@@ -543,10 +550,10 @@ mod tests {
     #[test]
     fn test_merge() {
         let mut schematic_1 = Schematic::new((3, 3, 3).try_into().unwrap());
-        schematic_1.add_content("something".to_string());
+        schematic_1.register_content("something".to_string());
 
         let mut schematic_2 = Schematic::new((3, 2, 2).try_into().unwrap());
-        let default_dirt = schematic_2.add_content("default:dirt".to_string());
+        let default_dirt = schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
                 (0, 0, 0).try_into().unwrap(),
@@ -588,10 +595,10 @@ mod tests {
     #[test]
     fn test_merge_small_schematic_into_larger() {
         let mut schematic_1 = Schematic::new((8, 8, 8).try_into().unwrap());
-        schematic_1.add_content("something".to_string());
+        schematic_1.register_content("something".to_string());
 
         let mut schematic_2 = Schematic::new((2, 2, 2).try_into().unwrap());
-        schematic_2.add_content("default:dirt".to_string());
+        schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
                 (0, 0, 0).try_into().unwrap(),
@@ -624,7 +631,7 @@ mod tests {
     #[test]
     fn test_insert_layer() {
         let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap());
-        let content_index = original_schematic.add_content("default:cobble".to_string());
+        let content_index = original_schematic.register_content("default:cobble".to_string());
         let node = Node::with_content_index(content_index);
 
         let new_schematic = original_schematic.insert_layer(1, &node).unwrap();
@@ -657,7 +664,7 @@ mod tests {
             (3, 2, 3).try_into().unwrap(),
             vec![Node::new(1, SpawnProbability::Always, true, 0); 18],
         );
-        schematic.add_content("default:cobble".to_string());
+        schematic.register_content("default:cobble".to_string());
 
         schematic
     }
