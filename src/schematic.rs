@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
+use ndarray::{Array3, Dim, s};
+
 use crate::Error;
 
 /// Luanti's maximum map size is 62013 x 62013 x 62013, from -31006 to 31006 (inclusive), but the
 /// schematics file format defines it as an unsigned 16-bit integer.
 const MAX_MAP_DIMENSION: u16 = 62013;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Schematic {
     pub(crate) version: u16,
     pub dimensions: MapVector,
@@ -16,7 +18,7 @@ pub struct Schematic {
     ///
     /// Examples of names are: "air", "default:cobble", "mcl_core:quartz"
     pub(crate) content_names: Vec<String>,
-    pub(crate) nodes: Vec<Node>,
+    pub(crate) nodes: Array3<Node>,
 }
 
 impl Schematic {
@@ -30,6 +32,12 @@ impl Schematic {
             };
             dimensions.volume()
         ];
+
+        Self::with_nodes(dimensions, nodes)
+    }
+
+    pub fn with_nodes(dimensions: MapVector, nodes: Vec<Node>) -> Self {
+        let nodes = Array3::from_shape_vec(dimensions.as_shape(), nodes).unwrap();
 
         Schematic {
             version: 4,
@@ -53,7 +61,7 @@ impl Schematic {
     }
 
     pub fn node_at(&self, coordinates: MapVector) -> Option<&Node> {
-        self.nodes.get(self.node_index_for_coordinates(coordinates))
+        self.nodes.get(coordinates.as_shape())
     }
 
     pub fn num_nodes(&self) -> usize {
@@ -87,6 +95,7 @@ impl Schematic {
     /// Registers a content name in the `Schematic`. Returns the content index that `Nodes` in this
     /// Schematic can point to.
     pub fn add_content(&mut self, name: String) -> u16 {
+        // TODO Convert this field to a HashMap
         self.content_names.push(name);
 
         (self.content_names.len() - 1) as u16
@@ -99,99 +108,79 @@ impl Schematic {
         fill_space: MapVector,
         node: &Node,
     ) -> Result<(), Error> {
-        let bounds_check: MapVector = from.checked_add(fill_space).ok_or(Error::OutOfBounds)?;
-        if bounds_check > self.dimensions {
+        let to: MapVector = from.checked_add(fill_space).ok_or(Error::OutOfBounds)?;
+        if to > self.dimensions {
             return Err(Error::OutOfBounds);
         }
 
-        // TODO This should add the Node's content name to the schematic when necessary, like merge() does.
-        // Perhaps add_content() can be modified for this and renamed to register_content_name() or
-        // something
+        let from_shape = from.as_shape();
+        let to_shape = to.as_shape();
 
-        for z in from.z..from.z + fill_space.z {
-            for y in from.y..from.y + fill_space.y {
-                for x in from.x..from.x + fill_space.x {
-                    let coordinates = (x, y, z).try_into()?;
-                    let index = self.node_index_for_coordinates(coordinates);
-                    // This array access is safe because we checked the bounds above, and we can be
-                    // sure we're not going out of bounds
-                    self.nodes[index] = *node;
-                }
-
-                /*
-                // fill() uses clone so is not as efficient
-                let fill_from = self.node_index_for_coordinates((from.x, y, z).into());
-                let fill_to = self.node_index_for_coordinates((from.x + dimensions.x, y, z).into());
-
-                self.nodes[fill_from..fill_to].fill(*node);
-                */
-            }
-        }
+        self.nodes
+            .slice_mut(s![
+                from_shape.0..to_shape.0,
+                from_shape.1..to_shape.1,
+                from_shape.2..to_shape.2
+            ])
+            .fill(*node);
 
         Ok(())
     }
 
-    pub fn insert_layer(&mut self, layer_num: u16, fill_with_node: &Node) -> Result<(), Error> {
-        if layer_num > self.dimensions.y {
+    /// Builds a new `Schematic` with a new layer of `fill_with_node` inserted on given `y` axis.
+    pub fn insert_layer(&mut self, y: u16, fill_with_node: &Node) -> Result<Schematic, Error> {
+        if y > self.dimensions.y {
             return Err(Error::OutOfBounds);
         }
 
-        self.layer_probabilities
-            .insert(layer_num as usize, SpawnProbability::Always);
-
-        let mut extended_nodes = Vec::with_capacity(
-            self.dimensions
-                .checked_add((0, 1, 0).try_into()?)
-                .ok_or(Error::OutOfBounds)?
-                .volume(),
-        );
-
-        // TODO This code is really complex with all the array index juggling. Is there a better
-        // datastructure that could be used?
-        // A Vec<Vec<Node>>, with the first Vec dimension being the Y-axis?
-        // Or a Vec<Layer>, with Layer also keeping track of the SpawnProbability?
-
-        let mut remaining_nodes = self.nodes.as_slice();
-        let split_index = self.node_index_for_coordinates((0, layer_num, 0).try_into()?);
-        let fill_x = [*fill_with_node].repeat(self.dimensions.x as usize);
-
-        for _ in 0..self.dimensions.z {
-            let (nodes_below, rest) = remaining_nodes.split_at(split_index);
-            extended_nodes.extend(nodes_below);
-            extended_nodes.extend(&fill_x);
-
-            let until_next_insert = (self.dimensions.y - layer_num) * self.dimensions.x;
-            extended_nodes.extend(&rest[..until_next_insert as usize]);
-
-            remaining_nodes = &remaining_nodes[until_next_insert as usize..];
-        }
-
-        self.nodes = extended_nodes;
-
-        // This needs to be done after the `node_index_for_coordinates()` calls, as the schematic's
-        // dimensions influence its calculations
-        self.dimensions = self
+        let new_dimensions = self
             .dimensions
             .checked_add((0, 1, 0).try_into()?)
             .ok_or(Error::OutOfBounds)?;
 
-        Ok(())
+        let mut extended_nodes = Array3::from_elem(new_dimensions.as_shape(), *fill_with_node);
+
+        // Copy all nodes above the new layer
+        let y = y as usize;
+        self.nodes
+            .slice(s![.., 0..y, ..])
+            .assign_to(&mut extended_nodes.slice_mut(s![.., 0..y, ..]));
+
+        // Copy all nodes below the new layer
+        self.nodes
+            .slice(s![.., y.., ..])
+            .assign_to(&mut extended_nodes.slice_mut(s![.., y + 1.., ..]));
+
+        // TODO Like with from_bytes(), this could do with a better constructor
+        let mut new_schematic = Schematic {
+            version: self.version,
+            dimensions: new_dimensions,
+            layer_probabilities: self.layer_probabilities.clone(),
+            content_names: self.content_names.clone(),
+            nodes: extended_nodes,
+        };
+
+        new_schematic
+            .layer_probabilities
+            .insert(y, SpawnProbability::Always);
+
+        Ok(new_schematic)
     }
 
-    /// Modifies the current `Schematic` by merging the given `Schematic` into it, starting at the
-    /// coordinates given in `merge_at`.
+    /// Modifies the current `Schematic` by merging the entire given `Schematic` into it, starting
+    /// at the coordinates given in `merge_at`.
     ///
-    /// If any `Node` during the merge falls outside of the current schematic's dimensions, an
-    /// `error::OutOfBounds` will be returned.
+    /// If the source `Schematic` doesn't fit in the target space, an `error::OutOfBounds` will be
+    /// returned.
     pub fn merge(
         &mut self,
         source_schematic: &Schematic,
         merge_at: MapVector,
     ) -> Result<(), Error> {
-        let bounds_check = merge_at
+        let merge_end = merge_at
             .checked_add(source_schematic.dimensions)
             .ok_or(Error::OutOfBounds)?;
-        if bounds_check > self.dimensions {
+        if merge_end > self.dimensions {
             return Err(Error::OutOfBounds);
         }
 
@@ -206,6 +195,8 @@ impl Schematic {
         // Schematic
         let mut source_content_map: HashMap<u16, u16> = HashMap::new();
 
+        // Register the content IDs of the source Schematic into at this Schematic, and keep track
+        // of their updated IDs (i.e. index positions)
         for (source_content_index, content_name) in
             source_schematic.content_names.iter().enumerate()
         {
@@ -228,43 +219,28 @@ impl Schematic {
             }
         }
 
-        for z in 0..source_schematic.dimensions.z {
-            for y in 0..source_schematic.dimensions.y {
-                let copy_start = source_schematic.node_index_for_coordinates((0, y, z).try_into()?);
-                let copy_end = source_schematic
-                    .node_index_for_coordinates((source_schematic.dimensions.x, y, z).try_into()?);
+        let from_shape = merge_at.as_shape();
+        let to_shape = merge_end.as_shape();
+        let target_space = self.nodes.slice_mut(s![
+            from_shape.0..to_shape.0,
+            from_shape.1..to_shape.1,
+            from_shape.2..to_shape.2
+        ]);
 
-                let mut nodes_to_copy: Vec<Node> =
-                    source_schematic.nodes[copy_start..copy_end].to_vec();
-                for node in nodes_to_copy.iter_mut() {
-                    // Check if this node's content got a new index position
-                    if let Some(new_content_index) = source_content_map.get(&node.content_index) {
-                        node.content_index = *new_content_index;
-                    }
-                }
+        // This does the actual merging
+        ndarray::Zip::from(&source_schematic.nodes).map_assign_into(target_space, |node| {
+            // Copies the Node
+            let mut node = *node;
 
-                let write_start = self.node_index_for_coordinates(
-                    (merge_at.x, merge_at.y + y, merge_at.z + z).try_into()?,
-                );
-                let write_end = self.node_index_for_coordinates(
-                    (
-                        merge_at.x + source_schematic.dimensions.x,
-                        merge_at.y + y,
-                        merge_at.z + z,
-                    )
-                        .try_into()?,
-                );
-                self.nodes[write_start..write_end].copy_from_slice(&nodes_to_copy[..]);
+            // If the content ID of a copied Node is different in this Schematic, update it
+            if let Some(new_content_index) = source_content_map.get(&node.content_index) {
+                node.content_index = *new_content_index;
             }
-        }
+
+            node
+        });
 
         Ok(())
-    }
-
-    fn node_index_for_coordinates(&self, coordinates: MapVector) -> usize {
-        coordinates.z as usize * (self.dimensions.y as usize * self.dimensions.x as usize)
-            + coordinates.y as usize * self.dimensions.x as usize
-            + coordinates.x as usize
     }
 }
 
@@ -275,7 +251,7 @@ pub struct AnnotatedNodeIterator<'schematic> {
     current_y: u16,
     current_z: u16,
     schematic: &'schematic Schematic,
-    nodes_iter: std::slice::Iter<'schematic, Node>,
+    nodes_iter: ndarray::iter::Iter<'schematic, Node, Dim<[usize; 3]>>,
 }
 
 impl<'schematic> AnnotatedNodeIterator<'_> {
@@ -446,6 +422,12 @@ impl MapVector {
 
         MapVector::new(x, y, z).ok()
     }
+
+    /// Converts the `MapVector` into a shape that can be used to access a row-major ndarray, such
+    /// as a `Schematic`'s `nodes`.
+    pub fn as_shape(self) -> (usize, usize, usize) {
+        (self.z as usize, self.y as usize, self.x as usize)
+    }
 }
 
 impl TryFrom<(u16, u16, u16)> for MapVector {
@@ -467,39 +449,39 @@ mod tests {
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 0, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[0]);
+        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 0)]);
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (1, 0, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[1]);
+        assert_eq!(annotated_node.node, &schematic.nodes[(1, 0, 0)]);
 
         let mut nodes_iter = nodes_iter.skip(1);
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 1, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[4]);
+        assert_eq!(annotated_node.node, &schematic.nodes[(0, 1, 0)]);
 
         let mut nodes_iter = nodes_iter.skip(2);
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 0, 1).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[6]);
+        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 1)]);
 
         let mut nodes_iter = nodes_iter.skip(10);
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (2, 1, 2).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[17]);
+        assert_eq!(annotated_node.node, &schematic.nodes[(2, 1, 2)]);
     }
 
     #[rstest]
     fn test_node_at(schematic: Schematic) {
         assert_eq!(
             schematic.node_at((0, 0, 0).try_into().unwrap()).unwrap(),
-            &schematic.nodes[0]
+            &schematic.nodes[(0, 0, 0)]
         );
 
         assert_eq!(
             schematic.node_at((1, 1, 1).try_into().unwrap()).unwrap(),
-            &schematic.nodes[10]
+            &schematic.nodes[(1, 1, 1)]
         );
 
         assert_eq!(schematic.node_at((999, 999, 999).try_into().unwrap()), None);
@@ -511,33 +493,11 @@ mod tests {
 
         assert!(schematic.validate().is_ok());
 
-        schematic.nodes[0].content_index = 999;
+        schematic.nodes.first_mut().unwrap().content_index = 999;
         assert!(schematic.validate().is_err());
 
-        schematic.nodes[0].content_index = 0;
+        schematic.nodes.first_mut().unwrap().content_index = 0;
         assert!(schematic.validate().is_ok());
-
-        schematic.nodes.remove(6);
-        assert!(schematic.validate().is_err());
-    }
-
-    #[rstest]
-    #[case((0, 0, 0), 0)]
-    #[case((1, 0, 0), 1)]
-    #[case((0, 1, 0), 3)]
-    #[case((0, 0, 1), 6)]
-    #[case((0, 1, 1), 9)]
-    #[case((1, 1, 1), 10)]
-    fn test_node_index(
-        schematic: Schematic,
-        #[case] coordinates: (u16, u16, u16),
-        #[case] expected: usize,
-    ) {
-        let coordinates = coordinates.try_into().unwrap();
-
-        let result = schematic.node_index_for_coordinates(coordinates);
-
-        assert_eq!(result, expected);
     }
 
     #[test]
@@ -582,16 +542,16 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        let mut schematic_1 = Schematic::new((2, 2, 2).try_into().unwrap());
+        let mut schematic_1 = Schematic::new((3, 3, 3).try_into().unwrap());
         schematic_1.add_content("something".to_string());
 
-        let mut schematic_2 = Schematic::new((2, 2, 2).try_into().unwrap());
-        schematic_2.add_content("default:dirt".to_string());
+        let mut schematic_2 = Schematic::new((3, 2, 2).try_into().unwrap());
+        let default_dirt = schematic_2.add_content("default:dirt".to_string());
         schematic_2
             .fill(
                 (0, 0, 0).try_into().unwrap(),
-                (2, 2, 2).try_into().unwrap(),
-                &Node::with_content_index(1),
+                schematic_2.dimensions,
+                &Node::with_content_index(default_dirt),
             )
             .unwrap();
 
@@ -599,15 +559,30 @@ mod tests {
             .merge(&schematic_2, (0, 0, 0).try_into().unwrap())
             .unwrap();
 
+        let default_dirt = schematic_1.content_id_for_name("default:dirt").unwrap();
+
         assert!(schematic_1.validate().is_ok());
         assert_eq!(
             schematic_1.content_names,
             &["air", "something", "default:dirt"]
         );
-        assert!(
-            schematic_1.nodes.iter().all(|node| node.content_index == 2),
-            "Content indexes of Nodes were not updated correctly"
+        assert_eq!(
+            schematic_1
+                .nodes
+                .iter()
+                .filter(|node| node.content_index == default_dirt)
+                .count(),
+            12,
+            "Nodes missing or indexes of merged Nodes were not updated correctly"
         );
+
+        // When seen as a 1D vector (as it will be saved in a MTS file), the following positions
+        // should have been updated by the merge:
+        for position in [0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14] {
+            let node = schematic_1.nodes.iter().nth(position).unwrap();
+
+            assert_eq!(node.content_index, default_dirt);
+        }
     }
 
     #[test]
@@ -648,57 +623,29 @@ mod tests {
 
     #[test]
     fn test_insert_layer() {
-        let mut schematic = Schematic::new((2, 1, 2).try_into().unwrap());
-        let content_index = schematic.add_content("default:cobble".to_string());
+        let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap());
+        let content_index = original_schematic.add_content("default:cobble".to_string());
         let node = Node::with_content_index(content_index);
 
-        schematic.insert_layer(1, &node).unwrap();
+        let new_schematic = original_schematic.insert_layer(1, &node).unwrap();
 
-        assert_eq!(schematic.dimensions.y, 2);
-        schematic.validate().unwrap();
+        assert_eq!(new_schematic.dimensions.y, 2);
+        new_schematic.validate().unwrap();
         assert_eq!(
-            schematic.node_at((0, 1, 0).try_into().unwrap()),
+            new_schematic.node_at((0, 1, 0).try_into().unwrap()),
             Some(&node)
         );
         assert!(
-            schematic.nodes[2..=3]
+            new_schematic
+                .nodes
+                .slice(s![.., 0, ..])
                 .iter()
-                .all(|node| node.content_index == 1)
+                .all(|node| node.content_index == 0)
         );
         assert!(
-            schematic.nodes[6..=7]
-                .iter()
-                .all(|node| node.content_index == 1)
-        );
-    }
-
-    #[test]
-    fn test_insert_layer_bottom_layer() {
-        let mut schematic = Schematic::new((3, 3, 3).try_into().unwrap());
-        let content_index = schematic.add_content("default:cobble".to_string());
-        let node = Node::with_content_index(content_index);
-        schematic.validate().unwrap();
-
-        schematic.insert_layer(0, &node).unwrap();
-
-        assert_eq!(schematic.dimensions.y, 4);
-        schematic.validate().unwrap();
-        assert_eq!(
-            schematic.node_at((0, 0, 0).try_into().unwrap()),
-            Some(&node)
-        );
-        assert!(
-            schematic.nodes[0..=2]
-                .iter()
-                .all(|node| node.content_index == 1)
-        );
-        assert!(
-            schematic.nodes[12..=14]
-                .iter()
-                .all(|node| node.content_index == 1)
-        );
-        assert!(
-            schematic.nodes[24..=26]
+            new_schematic
+                .nodes
+                .slice(s![.., 1, ..])
                 .iter()
                 .all(|node| node.content_index == 1)
         );
@@ -706,12 +653,12 @@ mod tests {
 
     #[fixture]
     fn schematic() -> Schematic {
-        Schematic {
-            version: 4,
-            dimensions: (3, 2, 3).try_into().unwrap(),
-            layer_probabilities: vec![SpawnProbability::Always, SpawnProbability::Always],
-            content_names: vec!["default:cobble".try_into().unwrap(), "air".into()],
-            nodes: vec![Node::new(0, SpawnProbability::Always, true, 0); 18],
-        }
+        let mut schematic = Schematic::with_nodes(
+            (3, 2, 3).try_into().unwrap(),
+            vec![Node::new(1, SpawnProbability::Always, true, 0); 18],
+        );
+        schematic.add_content("default:cobble".to_string());
+
+        schematic
     }
 }

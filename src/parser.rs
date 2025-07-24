@@ -30,7 +30,7 @@ pub fn from_bytes(input: &[u8]) -> Result<Schematic, ContextError> {
 
     verify_magic_bytes(stream)?;
 
-    let version = parse_version(stream)?;
+    let _version = parse_version(stream)?;
     let dimensions = parse_dimensions(stream)?;
     let layer_probabilities: Vec<SpawnProbability> =
         parse_layer_probabilities(stream, dimensions.y)?;
@@ -43,13 +43,13 @@ pub fn from_bytes(input: &[u8]) -> Result<Schematic, ContextError> {
     let num_nodes = dimensions.volume();
     let nodes = parse_nodes(node_stream, num_nodes, name_ids.len())?;
 
-    Ok(Schematic {
-        version,
-        dimensions,
-        layer_probabilities,
-        content_names: name_ids,
-        nodes,
-    })
+    // TODO Come up with a better constructor that also takes the layer probabilities and content
+    // names
+    let mut schematic = Schematic::with_nodes(dimensions, nodes);
+    schematic.layer_probabilities = layer_probabilities;
+    schematic.content_names = name_ids;
+
+    Ok(schematic)
 }
 
 fn parse_nodes(
