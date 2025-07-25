@@ -18,6 +18,7 @@ use winnow::combinator::repeat;
 use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::literal;
 
+use crate::error::Error;
 use crate::schematic::MapVector;
 use crate::schematic::Node;
 use crate::schematic::Schematic;
@@ -25,7 +26,7 @@ use crate::schematic::SpawnProbability;
 
 pub(crate) const MAGIC_BYTES: &[u8; 4] = b"MTSM";
 
-pub fn from_bytes(input: &[u8]) -> Result<Schematic, ContextError> {
+pub fn from_bytes(input: &[u8]) -> Result<Schematic, Error> {
     let stream = &mut BStr::new(input);
 
     verify_magic_bytes(stream)?;

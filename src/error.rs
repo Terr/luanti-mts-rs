@@ -8,4 +8,18 @@ pub enum Error {
     InvalidContentNameIndex(u16),
     #[error("Out of bounds")]
     OutOfBounds,
+    #[error("Parse error: {0}")]
+    ParseError(winnow::error::ContextError),
+}
+
+impl From<winnow::error::ContextError> for Error {
+    fn from(error: winnow::error::ContextError) -> Self {
+        Error::ParseError(error)
+    }
+}
+
+impl From<&winnow::error::ContextError> for Error {
+    fn from(error: &winnow::error::ContextError) -> Self {
+        Error::ParseError(error.clone())
+    }
 }
