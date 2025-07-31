@@ -364,9 +364,10 @@ pub struct AnnotatedNode<'node> {
     pub node: &'node Node,
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
 pub enum SpawnProbability {
     Never,
+    #[default]
     Always,
     Custom(u8),
 }
@@ -376,7 +377,7 @@ impl From<u8> for SpawnProbability {
         match value {
             0 => SpawnProbability::Never,
             // Nowadays '127' means "always spawn" but in the past this value used to be '255'.
-            // Just accept any higher value to so we can use a From instead of a TryFrom for ease of use.
+            // Just accept any higher value so we can use a From instead of a TryFrom for ease of use.
             127.. => SpawnProbability::Always,
             v => SpawnProbability::Custom(v),
         }
