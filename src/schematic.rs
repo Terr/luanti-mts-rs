@@ -39,8 +39,15 @@ impl Schematic {
     pub fn with_nodes(dimensions: MapVector, nodes: Vec<Node>) -> Self {
         let nodes = Array3::from_shape_vec(dimensions.as_shape(), nodes).unwrap();
 
+        Self::with_array3(dimensions, nodes)
+    }
+
+    pub fn with_array3(dimensions: MapVector, nodes: Array3<Node>) -> Self {
         Schematic {
             version: 4,
+            // Dimensions could be created from `nodes.shape()`, but since creating a `MapVector`
+            // is fallible this, and the other constructor methods, would become fallible as well.
+            // Let the caller provide a correct `MapVector` instead.
             dimensions,
             layer_probabilities: vec![SpawnProbability::Always; dimensions.y as usize],
             content_names: vec!["air".to_string()],
@@ -248,6 +255,33 @@ impl Schematic {
         });
 
         Ok(())
+    }
+
+    /// Splits the `Schematic`` up in smaller `Schematic`s, each of of `chunk_dimensions` in size.`
+    ///
+    /// The order of the chunks goes like this: first X, then Y, then Z.
+    ///
+    /// Because it only uses chunks of exact `chunk_dimensions` in size, any nodes that fall outside the
+    /// last chunk of that size won't be returned.
+    pub fn split_into_chunks(
+        &self,
+        chunk_dimensions: MapVector,
+    ) -> impl Iterator<Item = Schematic> {
+        // TODO Would be nice to be able to add coordinates to each item, either offsets within the
+        // original Schematic, or some position of the chunks relative to each other.
+        self.nodes
+            .exact_chunks(chunk_dimensions.as_shape())
+            .into_iter()
+            .map(move |chunk| {
+                let mut schematic = Schematic::with_array3(chunk_dimensions, chunk.to_owned());
+                // This is inaccurate, as not all content names of the original Schematic might be
+                // present in the smaller chunk, but the alternative would be to go through all
+                // nodes to gather the correct IDs, and adjust those IDs to their new position in
+                // the Schematic chunk's content_names array. That would be slow.
+                schematic.content_names = self.content_names.clone();
+
+                schematic
+            })
     }
 }
 
@@ -657,6 +691,16 @@ mod tests {
                 .iter()
                 .all(|node| node.content_index == 1)
         );
+    }
+
+    #[rstest]
+    fn test_split_into_chunks(schematic: Schematic) {
+        let chunks = schematic
+            .split_into_chunks((3, 2, 1).try_into().unwrap())
+            .collect::<Vec<Schematic>>();
+
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks.iter().all(|chunk| chunk.nodes.len() == 6));
     }
 
     #[fixture]
