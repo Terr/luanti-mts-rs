@@ -18,7 +18,7 @@ pub fn schematic_merge(c: &mut Criterion) {
             .fill(
                 MapVector::new(0, 0, 0).unwrap(),
                 schematic_2.dimensions,
-                &Node::with_content_index(content_index),
+                &Node::with_content_id(content_index),
             )
             .unwrap();
 
@@ -43,7 +43,7 @@ pub fn schematic_fill(c: &mut Criterion) {
         let mut schematic =
             Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap());
         let content_index = schematic.register_content("default:cobble".to_string());
-        let node = Node::with_content_index(content_index);
+        let node = Node::with_content_id(content_index);
 
         group.throughput(criterion::Throughput::Elements(schematic.num_nodes() as u64));
         group.bench_function(BenchmarkId::from_parameter(schematic_size), |b| {

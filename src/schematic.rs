@@ -25,7 +25,7 @@ impl Schematic {
     pub fn new(dimensions: MapVector) -> Self {
         let nodes = vec![
             Node {
-                content_index: 0,
+                content_id: 0,
                 probability: SpawnProbability::Always,
                 force_placement: false,
                 param2: 0
@@ -83,8 +83,8 @@ impl Schematic {
         }
 
         for node in self.nodes.iter() {
-            if node.content_index as usize >= self.content_names.len() {
-                return Err(Error::InvalidContentNameIndex(node.content_index));
+            if node.content_id as usize >= self.content_names.len() {
+                return Err(Error::InvalidContentNameIndex(node.content_id));
             }
         }
 
@@ -93,7 +93,7 @@ impl Schematic {
 
     /// Registers a content name in the `Schematic`. Checks for duplicates.
     ///
-    /// Returns the content index that `Nodes` in this Schematic can point to.
+    /// Returns the content ID that `Nodes` in this Schematic can point to.
     pub fn register_content(&mut self, name: String) -> u16 {
         // TODO Convert this field to a HashMap? But that would not be good for
         // `AnnotatedNodeIterator`
@@ -113,6 +113,10 @@ impl Schematic {
             .enumerate()
             .find(|(_index, content_name)| *content_name == name)
             .map(|(index, _content_name)| index as u16)
+    }
+
+    pub fn content_name_for_id(&self, id: u16) -> Option<&String> {
+        self.content_names.get(id as usize)
     }
 
     /// Starting at `from`, fills the given space with copies of the given `Node`.
@@ -211,24 +215,21 @@ impl Schematic {
 
         // Register the content IDs of the source Schematic into at this Schematic, and keep track
         // of their updated IDs (i.e. index positions)
-        for (source_content_index, content_name) in
-            source_schematic.content_names.iter().enumerate()
-        {
+        for (source_content_id, content_name) in source_schematic.content_names.iter().enumerate() {
             match current_content_positions.get(content_name) {
                 // Content already exists in this Schematic, but might be at a different index than
                 // at the source Schematic.
-                Some(current_content_index) => {
-                    if *current_content_index != source_content_index {
+                Some(current_content_id) => {
+                    if *current_content_id != source_content_id {
                         source_content_map
-                            .insert(source_content_index as u16, *current_content_index as u16);
+                            .insert(source_content_id as u16, *current_content_id as u16);
                     }
                 }
                 // Content isn't present in this Schematic yet
                 None => {
                     self.content_names.push(content_name.clone());
-                    let new_content_index = self.content_names.len() - 1;
-                    source_content_map
-                        .insert(source_content_index as u16, new_content_index as u16);
+                    let new_content_id = self.content_names.len() - 1;
+                    source_content_map.insert(source_content_id as u16, new_content_id as u16);
                 }
             }
         }
@@ -247,8 +248,8 @@ impl Schematic {
             let mut node = *node;
 
             // If the content ID of a copied Node is different in this Schematic, update it
-            if let Some(new_content_index) = source_content_map.get(&node.content_index) {
-                node.content_index = *new_content_index;
+            if let Some(new_content_id) = source_content_map.get(&node.content_id) {
+                node.content_id = *new_content_id;
             }
 
             node
@@ -319,10 +320,8 @@ impl<'schematic> Iterator for AnnotatedNodeIterator<'schematic> {
                 let content_name = self
                     .schematic
                     .content_names
-                    .get(node.content_index as usize)
-                    .expect(
-                        "node's content index should point to a content name in the schematic.",
-                    );
+                    .get(node.content_id as usize)
+                    .expect("node's content ID should point to a content name in the schematic.");
 
                 AnnotatedNode {
                     coordinates,
@@ -351,7 +350,7 @@ impl<'schematic> Iterator for AnnotatedNodeIterator<'schematic> {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct Node {
     /// Index to `content_names` array in the `Schematic`.
-    pub(crate) content_index: u16,
+    pub(crate) content_id: u16,
     /// How likely it is (from 1 to 127) that the game actually spawns this node. Used to add some
     /// randomness to schematics.
     pub(crate) probability: SpawnProbability,
@@ -368,26 +367,30 @@ pub struct Node {
 
 impl Node {
     pub fn new(
-        content_index: u16,
+        content_id: u16,
         probability: SpawnProbability,
         force_placement: bool,
         param2: u8,
     ) -> Self {
         Node {
-            content_index,
+            content_id,
             probability,
             force_placement,
             param2,
         }
     }
 
-    pub fn with_content_index(content_index: u16) -> Self {
+    pub fn with_content_id(content_id: u16) -> Self {
         Node {
-            content_index,
+            content_id,
             probability: SpawnProbability::Always,
             force_placement: false,
             param2: 0,
         }
+    }
+
+    pub fn content_id(&self) -> u16 {
+        self.content_id
     }
 }
 
@@ -535,10 +538,10 @@ mod tests {
 
         assert!(schematic.validate().is_ok());
 
-        schematic.nodes.first_mut().unwrap().content_index = 999;
+        schematic.nodes.first_mut().unwrap().content_id = 999;
         assert!(schematic.validate().is_err());
 
-        schematic.nodes.first_mut().unwrap().content_index = 0;
+        schematic.nodes.first_mut().unwrap().content_id = 0;
         assert!(schematic.validate().is_ok());
     }
 
@@ -550,7 +553,7 @@ mod tests {
                 .annotated_nodes()
                 .all(|node| node.content_name == "air")
         );
-        let node = Node::with_content_index(schematic.register_content("default:dirt".to_string()));
+        let node = Node::with_content_id(schematic.register_content("default:dirt".to_string()));
 
         schematic
             .fill(
@@ -571,7 +574,7 @@ mod tests {
     #[test]
     fn test_fill_out_of_bounds() {
         let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap());
-        let node = Node::with_content_index(0);
+        let node = Node::with_content_id(0);
 
         schematic
             .fill(
@@ -593,7 +596,7 @@ mod tests {
             .fill(
                 (0, 0, 0).try_into().unwrap(),
                 schematic_2.dimensions,
-                &Node::with_content_index(default_dirt),
+                &Node::with_content_id(default_dirt),
             )
             .unwrap();
 
@@ -612,7 +615,7 @@ mod tests {
             schematic_1
                 .nodes
                 .iter()
-                .filter(|node| node.content_index == default_dirt)
+                .filter(|node| node.content_id == default_dirt)
                 .count(),
             12,
             "Nodes missing or indexes of merged Nodes were not updated correctly"
@@ -623,7 +626,7 @@ mod tests {
         for position in [0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14] {
             let node = schematic_1.nodes.iter().nth(position).unwrap();
 
-            assert_eq!(node.content_index, default_dirt);
+            assert_eq!(node.content_id, default_dirt);
         }
     }
 
@@ -638,7 +641,7 @@ mod tests {
             .fill(
                 (0, 0, 0).try_into().unwrap(),
                 (2, 2, 2).try_into().unwrap(),
-                &Node::with_content_index(1),
+                &Node::with_content_id(1),
             )
             .unwrap();
 
@@ -666,8 +669,8 @@ mod tests {
     #[test]
     fn test_insert_layer() {
         let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap());
-        let content_index = original_schematic.register_content("default:cobble".to_string());
-        let node = Node::with_content_index(content_index);
+        let content_id = original_schematic.register_content("default:cobble".to_string());
+        let node = Node::with_content_id(content_id);
 
         let new_schematic = original_schematic.insert_layer(1, &node).unwrap();
 
@@ -682,14 +685,14 @@ mod tests {
                 .nodes
                 .slice(s![.., 0, ..])
                 .iter()
-                .all(|node| node.content_index == 0)
+                .all(|node| node.content_id == 0)
         );
         assert!(
             new_schematic
                 .nodes
                 .slice(s![.., 1, ..])
                 .iter()
-                .all(|node| node.content_index == 1)
+                .all(|node| node.content_id == 1)
         );
     }
 

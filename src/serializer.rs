@@ -34,7 +34,7 @@ pub fn to_bytes(schematic: &Schematic) -> Vec<u8> {
         schematic
             .nodes
             .iter()
-            .flat_map(|node| node.content_index.to_be_bytes()),
+            .flat_map(|node| node.content_id.to_be_bytes()),
     );
 
     node_data.extend(
