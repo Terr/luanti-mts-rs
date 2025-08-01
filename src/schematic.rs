@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ndarray::{Array3, Dim, s};
+use ndarray::{Array3, AssignElem, Dim, s};
 
 use crate::Error;
 
@@ -234,26 +234,62 @@ impl Schematic {
             }
         }
 
+        // These two content IDs are for blocks that are considered by Luanti as "nothing" when
+        // it comes to deciding if a node should overwrite the existing position, and the new node
+        // is marked as "force_placement = false"
+        let content_air = self.content_id_for_name("air");
+        let content_ignore = self.content_id_for_name("ignore");
+
         let from_shape = merge_at.as_shape();
         let to_shape = merge_end.as_shape();
-        let target_space = self.nodes.slice_mut(s![
+        let slice = s![
             from_shape.0..to_shape.0,
             from_shape.1..to_shape.1,
             from_shape.2..to_shape.2
-        ]);
+        ];
+
+        let target_space = self.nodes.slice_mut(slice);
 
         // This does the actual merging
-        ndarray::Zip::from(&source_schematic.nodes).map_assign_into(target_space, |node| {
-            // Copies the Node
-            let mut node = *node;
+        ndarray::Zip::from(&source_schematic.nodes)
+            // The reason for not using `map_assign_into()` here is that that function doesn't pass
+            // the target `into` slice into the closure, so we aren't able to make any comparisons
+            // to the original node.
+            .and(target_space)
+            .for_each(move |merge_node, target_node| {
+                // This doesn't take any SpawnProbability::Custom() probability into account, such
+                // nodes will just overwrite the current node. The game will then decide whether to
+                // spawn the node or not.
+                if merge_node.probability == SpawnProbability::Never && !merge_node.force_placement
+                {
+                    let place_merge_node = if let Some(air) = content_air
+                        && target_node.content_id == air
+                    {
+                        true
+                    } else if let Some(ignore) = content_ignore
+                        && target_node.content_id == ignore
+                    {
+                        true
+                    } else {
+                        false
+                    };
 
-            // If the content ID of a copied Node is different in this Schematic, update it
-            if let Some(new_content_id) = source_content_map.get(&node.content_id) {
-                node.content_id = *new_content_id;
-            }
+                    if !place_merge_node {
+                        // Leave the current node alone
+                        return;
+                    }
+                }
 
-            node
-        });
+                // Copies the Node
+                let mut node = *merge_node;
+
+                // If the content ID of a copied Node is different in this Schematic, update it
+                if let Some(new_content_id) = source_content_map.get(&node.content_id) {
+                    node.content_id = *new_content_id;
+                }
+
+                target_node.assign_elem(node);
+            });
 
         Ok(())
     }
@@ -653,6 +689,26 @@ mod tests {
         assert_eq!(
             schematic_1.content_names,
             &["air", "something", "default:dirt"]
+        );
+    }
+
+    #[rstest]
+    fn test_merge_optional_node_doesnt_overwrite_existing(mut schematic: Schematic) {
+        let content_id = schematic.register_content("default:dry_dirt".to_string());
+        let mut optional_node = Node::with_content_id(content_id);
+        optional_node.probability = SpawnProbability::Never;
+        let optional_schematic =
+            Schematic::with_nodes((1, 1, 1).try_into().unwrap(), vec![optional_node]);
+
+        schematic
+            .merge(&optional_schematic, (0, 0, 0).try_into().unwrap())
+            .unwrap();
+
+        let node = schematic.node_at((0, 0, 0).try_into().unwrap()).unwrap();
+        assert_eq!(
+            schematic.content_name_for_id(node.content_id).unwrap(),
+            "default:cobble",
+            "The original node should not have been overwritten by this default:dry_dirt node"
         );
     }
 
