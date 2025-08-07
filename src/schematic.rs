@@ -368,15 +368,15 @@ impl<'schematic> Iterator for AnnotatedNodeIterator<'schematic> {
             None => return None,
         };
 
-        self.current_x += 1;
-        if self.current_x == self.schematic.dimensions.x {
-            self.current_x = 0;
+        self.current_z += 1;
+        if self.current_z == self.schematic.dimensions.z {
+            self.current_z = 0;
             self.current_y += 1;
         }
 
         if self.current_y == self.schematic.dimensions.y {
             self.current_y = 0;
-            self.current_z += 1;
+            self.current_x += 1;
         }
 
         Some(item)
@@ -533,8 +533,8 @@ mod tests {
         assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 0)]);
 
         let annotated_node = nodes_iter.next().unwrap();
-        assert_eq!(annotated_node.coordinates, (1, 0, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(1, 0, 0)]);
+        assert_eq!(annotated_node.coordinates, (0, 0, 1).try_into().unwrap());
+        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 1)]);
 
         let mut nodes_iter = nodes_iter.skip(1);
         let annotated_node = nodes_iter.next().unwrap();
@@ -543,8 +543,8 @@ mod tests {
 
         let mut nodes_iter = nodes_iter.skip(2);
         let annotated_node = nodes_iter.next().unwrap();
-        assert_eq!(annotated_node.coordinates, (0, 0, 1).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 1)]);
+        assert_eq!(annotated_node.coordinates, (1, 0, 0).try_into().unwrap());
+        assert_eq!(annotated_node.node, &schematic.nodes[(1, 0, 0)]);
 
         let mut nodes_iter = nodes_iter.skip(10);
 
