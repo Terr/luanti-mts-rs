@@ -1,12 +1,21 @@
 use std::collections::HashMap;
 
-use ndarray::{Array3, AssignElem, Dim, s};
+use ndarray::{Array3, ArrayView3, AssignElem, Axis, Dim, s};
 
 use crate::Error;
 
 /// Luanti's maximum map size is 62013 x 62013 x 62013, from -31006 to 31006 (inclusive), but the
 /// schematics file format defines it as an unsigned 16-bit integer.
 const MAX_MAP_DIMENSION: u16 = 62013;
+
+/// Trait for interacting with a 3D space of `Node` instances.
+pub trait NodeSpace<'nodes> {
+    fn content_names(&self) -> impl Iterator<Item = &str>;
+
+    fn dimensions(&self) -> &MapVector;
+
+    fn nodes(&self) -> ArrayView3<'nodes, Node>;
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Schematic {
@@ -67,30 +76,6 @@ impl Schematic {
         self.nodes.len()
     }
 
-    /// Checks if the `Schematic` has enough `Nodes` to fill its entire space, that all
-    /// `Nodes` refer to a valid array index in `content_names`, and that there is a
-    /// `SpawnProbability` for each Y-layer.
-    pub fn validate(&self) -> Result<(), Error> {
-        if self.layer_probabilities.len() != self.dimensions.y as usize {
-            return Err(Error::IncorrectNumberOfLayerProbabilities);
-        }
-
-        if self.nodes.len() != self.dimensions.volume() {
-            return Err(Error::IncorrectNodeCount {
-                found: self.nodes.len(),
-                expected: self.dimensions.volume(),
-            });
-        }
-
-        for node in self.nodes.iter() {
-            if node.content_id as usize >= self.content_names.len() {
-                return Err(Error::InvalidContentNameIndex(node.content_id));
-            }
-        }
-
-        Ok(())
-    }
-
     /// Registers a content name in the `Schematic`. Checks for duplicates.
     ///
     /// Returns the content ID that `Nodes` in this Schematic can point to.
@@ -117,6 +102,81 @@ impl Schematic {
 
     pub fn content_name_for_id(&self, id: u16) -> Option<&String> {
         self.content_names.get(id as usize)
+    }
+
+    /// Rotates the `Schematic` 90 degrees to the left along its Y-axis
+    ///
+    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// instead.
+    pub fn rotate_left<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+        // TODO Some blocks use param2 to change their rotation (e.g. stair pieces). It would be
+        // difficult to create a comprehensive list of all rotations (especially with all the
+        // available mods), but hopefully all the default game's stair pieces use the same param2
+        // values However, it would mean copying the complete schematic and its data because we
+        // would be modifying the nodes
+        // (unless it's up to the caller to add map() to the nodes() output that copies/modifes the
+        // nodes' param2 when needed)
+
+        let mut rotated_nodes = self.nodes.t();
+        rotated_nodes.invert_axis(Axis(2));
+
+        SchematicRef {
+            schematic: self,
+            nodes_view: rotated_nodes,
+        }
+    }
+
+    /// Rotates the `Schematic` 90 degrees to the right along its Y-axis
+    ///
+    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// instead.
+    pub fn rotate_right<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+        let mut rotated_nodes = self.nodes.t();
+        rotated_nodes.invert_axis(Axis(0));
+
+        SchematicRef {
+            schematic: self,
+            nodes_view: rotated_nodes,
+        }
+    }
+
+    /// Rotates the `Schematic` 180 degrees its Y-axis
+    ///
+    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// instead.
+    pub fn rotate_180<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+        let mut rotated_nodes = self.nodes.view();
+        rotated_nodes.invert_axis(Axis(2));
+        rotated_nodes.invert_axis(Axis(0));
+
+        SchematicRef {
+            schematic: self,
+            nodes_view: rotated_nodes,
+        }
+    }
+
+    /// Checks if the `Schematic` has enough `Nodes` to fill its entire space, that all
+    /// `Nodes` refer to a valid array index in `content_names`, and that there is a
+    /// `SpawnProbability` for each Y-layer.
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.layer_probabilities.len() != self.dimensions.y as usize {
+            return Err(Error::IncorrectNumberOfLayerProbabilities);
+        }
+
+        if self.nodes.len() != self.dimensions.volume() {
+            return Err(Error::IncorrectNodeCount {
+                found: self.nodes.len(),
+                expected: self.dimensions.volume(),
+            });
+        }
+
+        for node in self.nodes.iter() {
+            if node.content_id as usize >= self.content_names.len() {
+                return Err(Error::InvalidContentNameIndex(node.content_id));
+            }
+        }
+
+        Ok(())
     }
 
     /// Starting at `from`, fills the given space with copies of the given `Node`.
@@ -190,13 +250,13 @@ impl Schematic {
     ///
     /// If the source `Schematic` doesn't fit in the target space, an `error::OutOfBounds` will be
     /// returned.
-    pub fn merge(
+    pub fn merge<'schematic>(
         &mut self,
-        source_schematic: &Schematic,
+        source: impl NodeSpace<'schematic>,
         merge_at: MapVector,
     ) -> Result<(), Error> {
         let merge_end = merge_at
-            .checked_add(source_schematic.dimensions)
+            .checked_add(*source.dimensions())
             .ok_or(Error::OutOfBounds)?;
         if merge_end > self.dimensions {
             return Err(Error::OutOfBounds);
@@ -215,7 +275,7 @@ impl Schematic {
 
         // Register the content IDs of the source Schematic into at this Schematic, and keep track
         // of their updated IDs (i.e. index positions)
-        for (source_content_id, content_name) in source_schematic.content_names.iter().enumerate() {
+        for (source_content_id, content_name) in source.content_names().enumerate() {
             match current_content_positions.get(content_name) {
                 // Content already exists in this Schematic, but might be at a different index than
                 // at the source Schematic.
@@ -227,7 +287,7 @@ impl Schematic {
                 }
                 // Content isn't present in this Schematic yet
                 None => {
-                    self.content_names.push(content_name.clone());
+                    self.content_names.push(content_name.to_string());
                     let new_content_id = self.content_names.len() - 1;
                     source_content_map.insert(source_content_id as u16, new_content_id as u16);
                 }
@@ -251,7 +311,7 @@ impl Schematic {
         let target_space = self.nodes.slice_mut(slice);
 
         // This does the actual merging
-        ndarray::Zip::from(&source_schematic.nodes)
+        ndarray::Zip::from(&source.nodes())
             // The reason for not using `map_assign_into()` here is that that function doesn't pass
             // the target `into` slice into the closure, so we aren't able to make any comparisons
             // to the original node.
@@ -319,6 +379,65 @@ impl Schematic {
 
                 schematic
             })
+    }
+}
+
+impl<'schematic> NodeSpace<'schematic> for &'schematic Schematic {
+    fn content_names(&self) -> impl Iterator<Item = &str> {
+        self.content_names.iter().map(|name| name.as_str())
+    }
+
+    fn dimensions(&self) -> &MapVector {
+        &self.dimensions
+    }
+
+    fn nodes(&self) -> ArrayView3<'schematic, Node> {
+        self.nodes.view()
+    }
+}
+
+/// Contains a modified view of a `Schematic`'s nodes, e.g. they have been rotated, or cut up
+/// somehow.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SchematicRef<'schematic> {
+    schematic: &'schematic Schematic,
+    nodes_view: ArrayView3<'schematic, Node>,
+}
+
+impl<'schematic> SchematicRef<'schematic> {
+    pub fn from_schematic(schematic: &'schematic Schematic) -> Self {
+        SchematicRef {
+            schematic,
+            nodes_view: schematic.nodes.view(),
+        }
+    }
+}
+
+impl<'schematic> NodeSpace<'schematic> for SchematicRef<'schematic> {
+    fn content_names(&self) -> impl Iterator<Item = &str> {
+        self.schematic.content_names()
+    }
+
+    fn dimensions(&self) -> &MapVector {
+        &self.schematic.dimensions
+    }
+
+    fn nodes(&self) -> ArrayView3<'schematic, Node> {
+        (&self).nodes()
+    }
+}
+
+impl<'schematic> NodeSpace<'schematic> for &SchematicRef<'schematic> {
+    fn content_names(&self) -> impl Iterator<Item = &str> {
+        self.schematic.content_names()
+    }
+
+    fn dimensions(&self) -> &MapVector {
+        &self.schematic.dimensions
+    }
+
+    fn nodes(&self) -> ArrayView3<'schematic, Node> {
+        self.nodes_view
     }
 }
 
@@ -523,6 +642,8 @@ impl TryFrom<(u16, u16, u16)> for MapVector {
 mod tests {
     use super::*;
     use rstest::*;
+
+    use super::NodeSpace;
 
     #[rstest]
     fn test_node_iterator(schematic: Schematic) {
@@ -762,13 +883,60 @@ mod tests {
         assert!(chunks.iter().all(|chunk| chunk.nodes.len() == 6));
     }
 
+    #[rstest]
+    fn test_rotate_left(schematic: Schematic) {
+        // Sanity check
+        assert_eq!(schematic.nodes.iter().next().unwrap().content_id, 1);
+
+        let rotated_schematic = schematic.rotate_left();
+
+        let nodes = rotated_schematic.nodes();
+        let mut iter = nodes.iter();
+        assert_eq!(iter.next().unwrap().content_id, 13);
+        let mut iter = iter.skip(1);
+        assert_eq!(iter.next().unwrap().content_id, 1);
+    }
+
+    #[rstest]
+    fn test_rotate_180(schematic: Schematic) {
+        // Sanity check
+        assert_eq!(schematic.nodes.iter().next().unwrap().content_id, 1);
+
+        let rotated_schematic = schematic.rotate_180();
+
+        let nodes = rotated_schematic.nodes();
+        let mut iter = nodes.iter();
+        assert_eq!(iter.next().unwrap().content_id, 15);
+        let mut iter = iter.skip(13);
+        assert_eq!(iter.next().unwrap().content_id, 1);
+    }
+
+    #[rstest]
+    fn test_rotate_right(schematic: Schematic) {
+        // Sanity check
+        assert_eq!(schematic.nodes.iter().next().unwrap().content_id, 1);
+
+        let rotated_schematic = schematic.rotate_right();
+
+        let nodes = rotated_schematic.nodes();
+        let mut iter = nodes.iter();
+        assert_eq!(iter.next().unwrap().content_id, 3);
+        let mut iter = iter.skip(1);
+        assert_eq!(iter.next().unwrap().content_id, 15);
+    }
+
     #[fixture]
     fn schematic() -> Schematic {
         let mut schematic = Schematic::with_nodes(
             (3, 2, 3).try_into().unwrap(),
-            vec![Node::new(1, SpawnProbability::Always, true, 0); 18],
+            (1..=18)
+                .map(|i| Node::new(i, SpawnProbability::Always, true, 0))
+                .collect(),
         );
         schematic.register_content("default:cobble".to_string());
+        (2..=schematic.num_nodes()).for_each(|i| {
+            schematic.register_content(format!("content:{i}"));
+        });
 
         schematic
     }

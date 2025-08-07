@@ -5,5 +5,5 @@ mod serializer;
 
 pub use error::Error;
 pub use parser::from_bytes;
-pub use schematic::{MapVector, Node, Schematic, SpawnProbability};
+pub use schematic::{MapVector, Node, Schematic, SchematicRef, SpawnProbability};
 pub use serializer::to_bytes;
