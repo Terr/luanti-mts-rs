@@ -1,9 +1,9 @@
 mod error;
-mod parser;
+mod node;
 mod schematic;
-mod serializer;
+mod vector;
 
 pub use error::Error;
-pub use parser::from_bytes;
-pub use schematic::{MapVector, Node, Schematic, SchematicRef, SpawnProbability};
-pub use serializer::to_bytes;
+pub use node::{Node, SpawnProbability};
+pub use schematic::{Schematic, SchematicRef};
+pub use vector::MapVector;

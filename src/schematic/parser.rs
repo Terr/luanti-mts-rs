@@ -19,14 +19,14 @@ use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::literal;
 
 use crate::error::Error;
-use crate::schematic::MapVector;
-use crate::schematic::Node;
-use crate::schematic::Schematic;
-use crate::schematic::SpawnProbability;
+use crate::node::{Node, SpawnProbability};
+use crate::vector::MapVector;
 
-pub(crate) const MAGIC_BYTES: &[u8; 4] = b"MTSM";
+use super::Schematic;
 
-pub fn from_bytes(input: &[u8]) -> Result<Schematic, Error> {
+pub(super) const MTS_MAGIC_BYTES: &[u8; 4] = b"MTSM";
+
+pub(super) fn parse(input: &[u8]) -> Result<Schematic, Error> {
     let stream = &mut BStr::new(input);
 
     verify_magic_bytes(stream)?;
@@ -91,7 +91,7 @@ fn parse_nodes(
 }
 
 fn verify_magic_bytes(stream: &mut &BStr) -> winnow::Result<()> {
-    literal::<_, _, ContextError>(MAGIC_BYTES)
+    literal::<_, _, ContextError>(MTS_MAGIC_BYTES)
         .context(parser_expected("magic header bytes to be \"MTSM\""))
         .parse_next(stream)?;
 
@@ -173,9 +173,9 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let data = include_bytes!("../tests/3x3.mts");
+        let data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/3x3.mts"));
 
-        let schematic = from_bytes(data).unwrap();
+        let schematic = parse(data).unwrap();
 
         assert_eq!(schematic.version, 4);
         assert_eq!(schematic.dimensions.x, 3);

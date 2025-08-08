@@ -3,13 +3,14 @@ use std::io::Write;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 
-use crate::parser::MAGIC_BYTES;
-use crate::schematic::Schematic;
+use super::Schematic;
+use super::parser::MTS_MAGIC_BYTES;
 
-pub fn to_bytes(schematic: &Schematic) -> Vec<u8> {
+/// Converts the given `Schematic` into a byte format that Luanti can load.
+pub(super) fn to_bytes(schematic: &Schematic) -> Vec<u8> {
     let mut output = Vec::new();
 
-    output.extend(MAGIC_BYTES);
+    output.extend(MTS_MAGIC_BYTES);
     output.extend(schematic.version.to_be_bytes());
     output.extend(schematic.dimensions.x.to_be_bytes());
     output.extend(schematic.dimensions.y.to_be_bytes());
@@ -60,19 +61,19 @@ pub fn to_bytes(schematic: &Schematic) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    use crate::parser::from_bytes;
+    use crate::schematic::parser::parse;
 
     #[test]
     fn test_to_bytes() {
-        let original_data = include_bytes!("../tests/3x3.mts");
-        let original_schematic = from_bytes(original_data).unwrap();
+        let original_data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/3x3.mts"));
+        let original_schematic = parse(original_data).unwrap();
 
         let serialized_schematic = to_bytes(&original_schematic);
-        // The original data and serialized schematic don't compare byte for byte because of
-        // differences in the zlib compression, so the best we can do here is re-parse the
-        // serialized schematic and see if that comes out the same as the originally parsed
-        // schematic. The game handles different zlib compression levels just fine.
-        let reparsed_schematic = from_bytes(&serialized_schematic).unwrap();
+        // The original data and serialized schematic don't always compare byte for byte because of
+        // variation the zlib compression, so the best we can do here is re-parse the serialized
+        // schematic and see if that comes out the same as the originally parsed schematic. The
+        // game handles different zlib compression levels just fine.
+        let reparsed_schematic = parse(&serialized_schematic).unwrap();
 
         assert_eq!(original_schematic, reparsed_schematic);
     }
