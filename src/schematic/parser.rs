@@ -1,8 +1,8 @@
 //! Parser for Luanti (formerly Minetest) Schematic files
 //!
 //! MTS file format documentation:
-//! * https://docs.luanti.org/for-creators/luanti-schematic-file-format/
-//! * https://github.com/luanti-org/luanti/blob/5.1.0/src/mapgen/mg_schematic.h
+//! * <https://docs.luanti.org/for-creators/luanti-schematic-file-format/>
+//! * <https://github.com/luanti-org/luanti/blob/5.1.0/src/mapgen/mg_schematic.h>
 
 use flate2::read::ZlibDecoder;
 use std::io::Read;
@@ -190,5 +190,18 @@ mod tests {
         assert_eq!(schematic.content_names.len(), 7);
         assert_eq!(schematic.content_names[6], "default:pine_wood");
         assert_eq!(schematic.num_nodes(), 18);
+    }
+
+    #[test]
+    fn test_from_bytes_with_invalid_data() {
+        let data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/3x3.mts"));
+        // Corrupt the data
+        let mut data = Vec::from(data);
+        let data_size = data.len();
+        data[data_size / 2..].iter_mut().for_each(|b| *b = 0);
+
+        let result = parse(&data);
+
+        assert!(result.is_err());
     }
 }
