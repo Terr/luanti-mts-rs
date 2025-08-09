@@ -1,14 +1,14 @@
-use ndarray::{ArrayView, Dim};
+use ndarray::ArrayView3;
 
 use crate::vector::MapVector;
 
 /// Trait for interacting with a 3D space of `Node` instances.
 pub trait NodeSpace<'nodes> {
-    fn content_names(&self) -> impl Iterator<Item = &str>;
+    fn content_names(&'nodes self) -> impl Iterator<Item = &'nodes str>;
 
-    fn dimensions(&self) -> &MapVector;
+    fn dimensions(&'nodes self) -> MapVector;
 
-    fn nodes(&self) -> ArrayView<'nodes, Node, Dim<[usize; 3]>>;
+    fn nodes(&'nodes self) -> ArrayView3<'nodes, Node>;
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

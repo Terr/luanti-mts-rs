@@ -205,7 +205,7 @@ impl Schematic {
     /// returned.
     pub fn merge<'schematic>(
         &mut self,
-        source: impl NodeSpace<'schematic>,
+        source: &'schematic impl NodeSpace<'schematic>,
         merge_at: MapVector,
     ) -> Result<(), Error> {
         editing::merge(source, self, merge_at)
@@ -243,13 +243,27 @@ impl Schematic {
     }
 }
 
-impl<'schematic> NodeSpace<'schematic> for &'schematic Schematic {
-    fn content_names(&self) -> impl Iterator<Item = &str> {
-        self.content_names.iter().map(|name| name.as_str())
+impl<'schematic> NodeSpace<'schematic> for Schematic {
+    fn content_names(&'schematic self) -> impl Iterator<Item = &'schematic str> {
+        self.content_names.iter().map(String::as_str)
     }
 
-    fn dimensions(&self) -> &MapVector {
-        &self.dimensions
+    fn dimensions(&'schematic self) -> MapVector {
+        self.dimensions
+    }
+
+    fn nodes(&'schematic self) -> ArrayView3<'schematic, Node> {
+        self.nodes.view()
+    }
+}
+
+impl<'schematic> NodeSpace<'schematic> for &'schematic Schematic {
+    fn content_names(&self) -> impl Iterator<Item = &str> {
+        self.content_names.iter().map(String::as_str)
+    }
+
+    fn dimensions(&self) -> MapVector {
+        self.dimensions
     }
 
     fn nodes(&self) -> ArrayView3<'schematic, Node> {
@@ -275,16 +289,16 @@ impl<'schematic> SchematicRef<'schematic> {
 }
 
 impl<'schematic> NodeSpace<'schematic> for SchematicRef<'schematic> {
-    fn content_names(&self) -> impl Iterator<Item = &str> {
+    fn content_names(&'schematic self) -> impl Iterator<Item = &'schematic str> {
         self.schematic.content_names()
     }
 
-    fn dimensions(&self) -> &MapVector {
-        &self.schematic.dimensions
+    fn dimensions(&'schematic self) -> MapVector {
+        self.schematic.dimensions
     }
 
-    fn nodes(&self) -> ArrayView3<'schematic, Node> {
-        (&self).nodes()
+    fn nodes(&'schematic self) -> ArrayView3<'schematic, Node> {
+        self.nodes_view
     }
 }
 
@@ -293,8 +307,8 @@ impl<'schematic> NodeSpace<'schematic> for &SchematicRef<'schematic> {
         self.schematic.content_names()
     }
 
-    fn dimensions(&self) -> &MapVector {
-        &self.schematic.dimensions
+    fn dimensions(&self) -> MapVector {
+        self.schematic.dimensions
     }
 
     fn nodes(&self) -> ArrayView3<'schematic, Node> {

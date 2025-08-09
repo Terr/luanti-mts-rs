@@ -82,12 +82,12 @@ pub(super) fn insert_layer(
 }
 
 pub(super) fn merge<'schematic>(
-    source: impl NodeSpace<'schematic>,
+    source: &'schematic impl NodeSpace<'schematic>,
     destination: &mut Schematic,
     merge_at: MapVector,
 ) -> Result<(), Error> {
     let merge_end = merge_at
-        .checked_add(*source.dimensions())
+        .checked_add(source.dimensions())
         .ok_or(Error::OutOfBounds)?;
     if merge_end > destination.dimensions {
         return Err(Error::OutOfBounds);
