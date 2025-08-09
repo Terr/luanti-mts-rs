@@ -22,7 +22,7 @@ pub struct Schematic {
 }
 
 impl Schematic {
-    pub fn new(dimensions: MapVector) -> Self {
+    pub fn new(dimensions: MapVector) -> Result<Self, Error> {
         let nodes = vec![
             Node {
                 content_id: 0,
@@ -36,10 +36,16 @@ impl Schematic {
         Self::with_nodes(dimensions, nodes)
     }
 
-    pub fn with_nodes(dimensions: MapVector, nodes: Vec<Node>) -> Self {
-        let nodes = Array3::from_shape_vec(dimensions.as_shape(), nodes).unwrap();
+    pub fn with_nodes(dimensions: MapVector, nodes: Vec<Node>) -> Result<Self, Error> {
+        let num_nodes = nodes.len();
+        let nodes = Array3::from_shape_vec(dimensions.as_shape(), nodes).map_err(|_| {
+            Error::IncorrectNodeCount {
+                found: num_nodes,
+                expected: dimensions.volume(),
+            }
+        })?;
 
-        Self::with_array3(dimensions, nodes)
+        Ok(Self::with_array3(dimensions, nodes))
     }
 
     pub fn with_array3(dimensions: MapVector, nodes: Array3<Node>) -> Self {
@@ -410,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_validate() {
-        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap());
+        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
 
         assert!(schematic.validate().is_ok());
 
@@ -480,7 +486,8 @@ mod tests {
             (1..=18)
                 .map(|i| Node::new(i, SpawnProbability::Always, true, 0))
                 .collect(),
-        );
+        )
+        .unwrap();
         schematic.register_content("default:cobble".to_string());
         (2..=schematic.num_nodes()).for_each(|i| {
             schematic.register_content(format!("content:{i}"));

@@ -9,10 +9,12 @@ pub fn schematic_merge(c: &mut Criterion) {
 
     for schematic_size in schematic_sizes {
         let mut schematic_1 =
-            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap());
+            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap())
+                .unwrap();
 
         let mut schematic_2 =
-            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap());
+            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap())
+                .unwrap();
         let content_index = schematic_2.register_content("default:cobble".to_string());
         schematic_2
             .fill(
@@ -41,7 +43,8 @@ pub fn schematic_fill(c: &mut Criterion) {
 
     for schematic_size in schematic_sizes {
         let mut schematic =
-            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap());
+            Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap())
+                .unwrap();
         let content_index = schematic.register_content("default:cobble".to_string());
         let node = Node::with_content_id(content_index);
 

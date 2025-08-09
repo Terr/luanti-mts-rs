@@ -46,7 +46,7 @@ pub(super) fn parse(input: &[u8]) -> Result<Schematic, Error> {
 
     // TODO Come up with a better constructor that also takes the layer probabilities and content
     // names
-    let mut schematic = Schematic::with_nodes(dimensions, nodes);
+    let mut schematic = Schematic::with_nodes(dimensions, nodes)?;
     schematic.layer_probabilities = layer_probabilities;
     schematic.content_names = name_ids;
 

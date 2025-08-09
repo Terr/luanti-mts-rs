@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_fill() {
-        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap());
+        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
         assert!(
             schematic
                 .annotated_nodes()
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_fill_out_of_bounds() {
-        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap());
+        let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
         let node = Node::with_content_id(0);
 
         schematic
@@ -242,11 +242,11 @@ mod tests {
 
     #[test]
     fn test_insert_layer() {
-        let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap());
+        let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap()).unwrap();
         let content_id = original_schematic.register_content("default:cobble".to_string());
         let node = Node::with_content_id(content_id);
 
-        let new_schematic = original_schematic.insert_layer(1, &node).unwrap();
+        let new_schematic = original_schematic.insert_layer(1, node).unwrap();
 
         assert_eq!(new_schematic.dimensions.y, 2);
         new_schematic.validate().unwrap();
@@ -272,10 +272,10 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        let mut schematic_1 = Schematic::new((3, 3, 3).try_into().unwrap());
+        let mut schematic_1 = Schematic::new((3, 3, 3).try_into().unwrap()).unwrap();
         schematic_1.register_content("something".to_string());
 
-        let mut schematic_2 = Schematic::new((3, 2, 2).try_into().unwrap());
+        let mut schematic_2 = Schematic::new((3, 2, 2).try_into().unwrap()).unwrap();
         let default_dirt = schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
@@ -317,10 +317,10 @@ mod tests {
 
     #[test]
     fn test_merge_small_schematic_into_larger() {
-        let mut schematic_1 = Schematic::new((8, 8, 8).try_into().unwrap());
+        let mut schematic_1 = Schematic::new((8, 8, 8).try_into().unwrap()).unwrap();
         schematic_1.register_content("something".to_string());
 
-        let mut schematic_2 = Schematic::new((2, 2, 2).try_into().unwrap());
+        let mut schematic_2 = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
         schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
@@ -347,7 +347,7 @@ mod tests {
         let mut optional_node = Node::with_content_id(content_id);
         optional_node.probability = SpawnProbability::Never;
         let optional_schematic =
-            Schematic::with_nodes((1, 1, 1).try_into().unwrap(), vec![optional_node]);
+            Schematic::with_nodes((1, 1, 1).try_into().unwrap(), vec![optional_node]).unwrap();
 
         schematic
             .merge(&optional_schematic, (0, 0, 0).try_into().unwrap())
@@ -368,7 +368,8 @@ mod tests {
             (1..=18)
                 .map(|i| Node::new(i, SpawnProbability::Always, true, 0))
                 .collect(),
-        );
+        )
+        .unwrap();
         schematic.register_content("default:cobble".to_string());
         (2..=schematic.num_nodes()).for_each(|i| {
             schematic.register_content(format!("content:{i}"));
