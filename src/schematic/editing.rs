@@ -107,20 +107,17 @@ pub(super) fn merge<'schematic>(
     // Register the content IDs of the source Schematic into at this Schematic, and keep track
     // of their updated IDs (i.e. index positions)
     for (source_content_id, content_name) in source.content_names().enumerate() {
-        match current_content_positions.get(content_name) {
+        if let Some(current_content_id) = current_content_positions.get(content_name) {
             // Content already exists in this Schematic, but might be at a different index than
-            // at the source Schematic.
-            Some(current_content_id) => {
-                if *current_content_id != source_content_id {
-                    source_content_map.insert(source_content_id as u16, *current_content_id as u16);
-                }
+            // in the source Schematic.
+            if *current_content_id != source_content_id {
+                source_content_map.insert(source_content_id as u16, *current_content_id as u16);
             }
+        } else {
             // Content isn't present in this Schematic yet
-            None => {
-                destination.content_names.push(content_name.to_string());
-                let new_content_id = destination.content_names.len() - 1;
-                source_content_map.insert(source_content_id as u16, new_content_id as u16);
-            }
+            destination.content_names.push(content_name.to_string());
+            let new_content_id = destination.content_names.len() - 1;
+            source_content_map.insert(source_content_id as u16, new_content_id as u16);
         }
     }
 
