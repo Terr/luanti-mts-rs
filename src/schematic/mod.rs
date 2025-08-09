@@ -79,13 +79,22 @@ impl Schematic {
 
     /// Registers a content name in the `Schematic`. Checks for duplicates.
     ///
-    /// Returns the content ID that `Nodes` in this Schematic can point to.
+    /// Returns the content ID that `Node`s in this Schematic can point to.
+    ///
+    /// # Panics
+    ///
+    /// Panics when exceeding the limit of 65536 unique content names
     pub fn register_content(&mut self, name: String) -> u16 {
         // TODO Convert this field to a HashMap? But that would not be good for
         // `AnnotatedNodeIterator`
 
         match self.content_id_for_name(&name) {
             None => {
+                assert!(
+                    self.content_names.len() - 1 != u16::MAX as usize,
+                    "A Schematic can only contain 65536 kinds of content"
+                );
+
                 self.content_names.push(name);
                 (self.content_names.len() - 1) as u16
             }
