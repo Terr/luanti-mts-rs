@@ -16,7 +16,7 @@ pub struct Node {
     /// Index to `content_names` array in the `Schematic`.
     pub(crate) content_id: u16,
     /// How likely it is (from 1 to 127) that the game actually spawns this node. Used to add some
-    /// randomness to schematics.
+    /// randomness to schematics. Older versions of the game used 255 to indicate "always spawn".
     pub(crate) probability: SpawnProbability,
     /// According to Luanti's documentation, when this is set to `false` this node should only be
     /// placed if it replaces an "air" or "ignore" node in the world. When true, it would replace

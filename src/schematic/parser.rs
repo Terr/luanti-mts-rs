@@ -69,7 +69,7 @@ fn parse_nodes(
             .map(|v| ((v & 0x80) > 0, v & 0x7f))
             .verify(|(_force_placement, probability)| is_valid_probability(*probability)),
     )
-    .context(parser_expected("a probability value between 0-127"))
+    .context(parser_expected("a probability value between 0-127, or 255"))
     .parse_next(node_stream)?;
 
     let node_params2: Vec<u8> = repeat(num_nodes, be_u8)
@@ -123,7 +123,7 @@ fn parse_layer_probabilities(
             .verify(|v| is_valid_probability(*v))
             .map(SpawnProbability::from),
     )
-    .context(parser_expected("a probability value between 0-127"))
+    .context(parser_expected("a probability value between 0-127, or 255"))
     .parse_next(stream)
 }
 
@@ -162,9 +162,10 @@ fn parser_expected(description: &'static str) -> StrContext {
     StrContext::Expected(StrContextValue::Description(description))
 }
 
-/// Probability values are between 0 and 127 (inclusive)
+/// Probability values are between 0 and 127 (inclusive). However, older versions of
+/// Luanti/Minetest used 255 to indicate "always"
 fn is_valid_probability(value: u8) -> bool {
-    value <= 127
+    value <= 127 || value == 255
 }
 
 #[cfg(test)]
