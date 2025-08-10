@@ -129,7 +129,7 @@ impl Schematic {
             });
         }
 
-        for node in self.nodes.iter() {
+        for node in &self.nodes {
             if node.content_id as usize >= self.content_names.len() {
                 return Err(Error::InvalidContentNameIndex(node.content_id));
             }
@@ -142,7 +142,7 @@ impl Schematic {
     ///
     /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
     /// instead.
-    pub fn rotate_left<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+    pub fn rotate_left(&self) -> SchematicRef<'_> {
         // TODO Some blocks use param2 to change their rotation (e.g. stair pieces). It would be
         // impossible to create a comprehensive list of all param2 rotation values (especially with
         // all the available mods), but hopefully all the default game's stair pieces use the same
@@ -166,7 +166,7 @@ impl Schematic {
     ///
     /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
     /// instead.
-    pub fn rotate_right<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+    pub fn rotate_right(&self) -> SchematicRef<'_> {
         let mut rotated_nodes = self.nodes.t();
         rotated_nodes.invert_axis(Axis(0));
 
@@ -180,7 +180,7 @@ impl Schematic {
     ///
     /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
     /// instead.
-    pub fn rotate_180<'schematic>(&'schematic self) -> SchematicRef<'schematic> {
+    pub fn rotate_180(&self) -> SchematicRef<'_> {
         let mut rotated_nodes = self.nodes.view();
         rotated_nodes.invert_axis(Axis(2));
         rotated_nodes.invert_axis(Axis(0));
@@ -241,7 +241,7 @@ impl Schematic {
                 // present in the smaller chunk, but the alternative would be to go through all
                 // nodes to gather the correct IDs, and adjust those IDs to their new position in
                 // the Schematic chunk's content_names array. That would be slow.
-                schematic.content_names = self.content_names.clone();
+                schematic.content_names.clone_from(&self.content_names);
 
                 schematic
             })

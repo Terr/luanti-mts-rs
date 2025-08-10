@@ -24,9 +24,9 @@ pub(super) fn to_bytes(schematic: &Schematic) -> Vec<u8> {
     );
 
     output.extend((schematic.content_names.len() as u16).to_be_bytes());
-    for name_id in schematic.content_names.iter() {
-        output.extend((name_id.len() as u16).to_be_bytes());
-        output.extend(name_id.as_bytes());
+    for content_name in &schematic.content_names {
+        output.extend((content_name.len() as u16).to_be_bytes());
+        output.extend(content_name.as_bytes());
     }
 
     // Node data is stored with zlib compression
@@ -42,7 +42,7 @@ pub(super) fn to_bytes(schematic: &Schematic) -> Vec<u8> {
         schematic
             .nodes
             .iter()
-            .map(|node| (node.force_placement as u8) << 7 | u8::from(node.probability)),
+            .map(|node| u8::from(node.force_placement) << 7 | u8::from(node.probability)),
     );
 
     node_data.extend(schematic.nodes.iter().map(|node| node.param2));
