@@ -36,7 +36,7 @@ impl MapVector {
     }
 
     /// Converts the `MapVector` into a shape that can be used to access a row-major ndarray, such
-    /// as a `Schematic`'s `nodes`.
+    /// as a [Schematic](crate::schematic::Schematic)'s nodes.
     pub fn as_shape(self) -> (usize, usize, usize) {
         (self.z as usize, self.y as usize, self.x as usize)
     }

@@ -38,8 +38,8 @@ impl Schematic {
         Self::with_raw_nodes(dimensions, nodes)
     }
 
-    /// Since `RawNode` do not contain the actual content names, using this constructor requires
-    /// the caller to `register_content()` all the content names that the `RawNode`s content IDs
+    /// Since [RawNode] does not contain the actual content names, using this constructor requires
+    /// the caller to `register_content()` all the content names that the [RawNode]s content IDs
     /// point to and update those IDs, if necessary.
     pub fn with_raw_nodes<T: Into<Vec<RawNode>>>(
         dimensions: MapVector,
@@ -103,9 +103,9 @@ impl Schematic {
         }
     }
 
-    /// Checks if the `Schematic` has enough `Nodes` to fill its entire space, that all
-    /// `Nodes` refer to a valid array index in `content_names`, and that there is a
-    /// `SpawnProbability` for each Y-layer.
+    /// Checks if the `Schematic` has enough [Node]s to fill its entire space, that all
+    /// [Node]s refer to a valid array index in `content_names`, and that there is a
+    /// [SpawnProbability] for each Y-layer.
     pub fn validate(&self) -> Result<(), Error> {
         if self.layer_probabilities.len() != self.dimensions.y as usize {
             return Err(Error::IncorrectNumberOfLayerProbabilities);
@@ -140,7 +140,7 @@ impl Schematic {
         Ok(())
     }
 
-    /// Converts a `Node` to a `RawNode`, and registers the `Node`'s content in this `Schematic` if
+    /// Converts a [Node] to a [RawNode], and registers the [Node]'s content in this `Schematic` if
     /// it isn't part of this schematic already.
     pub fn convert_node_to_raw_node(&mut self, node: &Node) -> RawNode {
         self.register_content(node.content_name.clone());
@@ -151,7 +151,7 @@ impl Schematic {
 
     /// Rotates the `Schematic` 90 degrees to the left along its Y-axis
     ///
-    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// Does not copy the [Node] data, returns a reference that uses the original `Schematic`
     /// instead.
     pub fn rotate_left(&self) -> SchematicRef<'_> {
         // TODO Some blocks use param2 to change their rotation (e.g. stair pieces). It would be
@@ -175,7 +175,7 @@ impl Schematic {
 
     /// Rotates the `Schematic` 90 degrees to the right along its Y-axis
     ///
-    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// Does not copy the [Node] data, returns a reference that uses the original `Schematic`
     /// instead.
     pub fn rotate_right(&self) -> SchematicRef<'_> {
         let mut rotated_nodes = self.nodes.t();
@@ -189,7 +189,7 @@ impl Schematic {
 
     /// Rotates the `Schematic` 180 degrees its Y-axis
     ///
-    /// Does not copy the `Node` data, returns a reference that uses the original `Schematic`
+    /// Does not copy the [Node] data, returns a reference that uses the original `Schematic`
     /// instead.
     pub fn rotate_180(&self) -> SchematicRef<'_> {
         let mut rotated_nodes = self.nodes.view();
@@ -202,7 +202,8 @@ impl Schematic {
         }
     }
 
-    /// Starting at `from_position`, fills the given space with copies of the given `Node`.
+    /// Starting at `from_position`, fills the given space with copies of the given `Node`
+    /// (converted to a [RawNode])
     pub fn fill(
         &mut self,
         from_position: MapVector,
@@ -215,7 +216,7 @@ impl Schematic {
     }
 
     /// Copies the current `Schematic` and adds a new layer with copies of `fill_with_node`
-    /// inserted on given `y` axis.
+    /// (converted to a [RawNode]) inserted on given `y` axis.
     pub fn insert_layer(&self, y: u16, fill_with_node: &Node) -> Result<Schematic, Error> {
         editing::insert_layer(self, y, fill_with_node)
     }
@@ -223,8 +224,8 @@ impl Schematic {
     /// Modifies the current `Schematic` by merging the entire given `Schematic` into it, starting
     /// at the coordinates given in `merge_at`.
     ///
-    /// If the source `Schematic` doesn't fit in the target space, an `error::OutOfBounds` will be
-    /// returned.
+    /// If the source `Schematic` doesn't fit in the target space, an
+    /// [OutOfBounds](Error::OutOfBounds) will be returned.
     pub fn merge<'schematic>(
         &mut self,
         source: &'schematic impl NodeSpace<'schematic>,
@@ -233,7 +234,7 @@ impl Schematic {
         editing::merge(source, self, merge_at)
     }
 
-    /// Splits the `Schematic`` up in smaller `Schematic`s, each of of `chunk_dimensions` in size.`
+    /// Splits the `Schematic` up in smaller `Schematic`s, each of of `chunk_dimensions` in size.`
     ///
     /// The order of the chunks goes like this: first X, then Y, then Z.
     ///

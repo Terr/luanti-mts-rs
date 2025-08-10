@@ -8,7 +8,7 @@ use crate::node::NodeSpace;
 use super::Schematic;
 use super::parser::MTS_MAGIC_BYTES;
 
-/// Converts the given `Schematic` into a byte format that Luanti can load.
+/// Converts the given [Schematic] into a byte format that Luanti can load.
 pub(super) fn to_bytes(schematic: &Schematic) -> Vec<u8> {
     let mut output = Vec::new();
 
