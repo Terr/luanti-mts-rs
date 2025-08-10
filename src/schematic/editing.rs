@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ndarray::{Array3, AssignElem, s};
 
 use crate::error::Error;
-use crate::node::{Node, NodeSpace, SpawnProbability};
+use crate::node::{Node, NodeSpace, RawNode, SpawnProbability};
 use crate::vector::MapVector;
 
 use super::Schematic;
@@ -12,7 +12,7 @@ pub(super) fn fill(
     destination: &mut Schematic,
     from_position: MapVector,
     fill_space: MapVector,
-    node: &Node,
+    node: RawNode,
 ) -> Result<(), Error> {
     let to: MapVector = from_position
         .checked_add(fill_space)
@@ -31,7 +31,7 @@ pub(super) fn fill(
             from_shape.1..to_shape.1,
             from_shape.2..to_shape.2
         ])
-        .fill(*node);
+        .fill(node);
 
     Ok(())
 }
@@ -50,20 +50,14 @@ pub(super) fn insert_layer(
         .checked_add((0, 1, 0).try_into()?)
         .ok_or(Error::OutOfBounds)?;
 
-    let mut extended_nodes = Array3::from_elem(new_dimensions.as_shape(), *fill_with_node);
+    let fill_with_raw_node = RawNode::new(
+        schematic.content_names.len() as u16,
+        fill_with_node.spawn_probability,
+        fill_with_node.force_placement,
+        fill_with_node.param2,
+    );
 
-    // Copy all nodes above the new layer
-    let y = y as usize;
-    schematic
-        .nodes
-        .slice(s![.., 0..y, ..])
-        .assign_to(&mut extended_nodes.slice_mut(s![.., 0..y, ..]));
-
-    // Copy all nodes below the new layer
-    schematic
-        .nodes
-        .slice(s![.., y.., ..])
-        .assign_to(&mut extended_nodes.slice_mut(s![.., y + 1.., ..]));
+    let extended_nodes = Array3::from_elem(new_dimensions.as_shape(), fill_with_raw_node);
 
     // TODO Like with from_bytes(), this could do with a better constructor
     let mut new_schematic = Schematic {
@@ -73,6 +67,22 @@ pub(super) fn insert_layer(
         content_names: schematic.content_names.clone(),
         nodes: extended_nodes,
     };
+    new_schematic
+        .content_names
+        .push(fill_with_node.content_name.clone().into_owned());
+
+    // Copy all nodes above the new layer
+    let y = y as usize;
+    schematic
+        .nodes
+        .slice(s![.., 0..y, ..])
+        .assign_to(&mut new_schematic.nodes.slice_mut(s![.., 0..y, ..]));
+
+    // Copy all nodes below the new layer
+    schematic
+        .nodes
+        .slice(s![.., y.., ..])
+        .assign_to(&mut new_schematic.nodes.slice_mut(s![.., y + 1.., ..]));
 
     new_schematic
         .layer_probabilities
@@ -147,7 +157,9 @@ pub(super) fn merge<'schematic>(
             // This doesn't take any SpawnProbability::Custom() probability into account, such
             // nodes will just overwrite the current node. The game will then decide whether to
             // spawn the node or not.
-            if merge_node.probability == SpawnProbability::Never && !merge_node.force_placement {
+            if merge_node.spawn_probability == SpawnProbability::Never.into()
+                && !merge_node.force_placement
+            {
                 let place_merge_node = if let Some(air) = content_air
                     && target_node.content_id == air
                 {
@@ -185,7 +197,7 @@ mod tests {
     use super::*;
     use rstest::*;
 
-    use crate::node::Node;
+    use crate::node::RawNode;
 
     #[test]
     fn test_fill() {
@@ -193,9 +205,9 @@ mod tests {
         assert!(
             schematic
                 .annotated_nodes()
-                .all(|node| node.content_name == "air")
+                .all(|annotated_node| annotated_node.node.content_name == "air")
         );
-        let node = Node::with_content_id(schematic.register_content("default:dirt".to_string()));
+        let node = Node::with_content_name("default:dirt".into());
 
         schematic
             .fill(
@@ -208,7 +220,7 @@ mod tests {
         assert!(
             schematic
                 .annotated_nodes()
-                .all(|node| node.content_name == "default:dirt"),
+                .all(|annotated_node| annotated_node.node.content_name == "default:dirt"),
             "not all nodes in the schematic were replaced"
         );
     }
@@ -216,7 +228,7 @@ mod tests {
     #[test]
     fn test_fill_out_of_bounds() {
         let mut schematic = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
-        let node = Node::with_content_id(0);
+        let node = Node::with_content_name("air".into());
 
         schematic
             .fill(
@@ -239,17 +251,16 @@ mod tests {
 
     #[test]
     fn test_insert_layer() {
-        let mut original_schematic = Schematic::new((2, 1, 2).try_into().unwrap()).unwrap();
-        let content_id = original_schematic.register_content("default:cobble".to_string());
-        let node = Node::with_content_id(content_id);
+        let original_schematic = Schematic::new((2, 1, 2).try_into().unwrap()).unwrap();
+        let node = Node::with_content_name("default:cobble".into());
 
-        let new_schematic = original_schematic.insert_layer(1, node).unwrap();
+        let new_schematic = original_schematic.insert_layer(1, &node).unwrap();
 
         assert_eq!(new_schematic.dimensions.y, 2);
         new_schematic.validate().unwrap();
         assert_eq!(
             new_schematic.node_at((0, 1, 0).try_into().unwrap()),
-            Some(&node)
+            Some(node)
         );
         assert!(
             new_schematic
@@ -270,15 +281,14 @@ mod tests {
     #[test]
     fn test_merge() {
         let mut schematic_1 = Schematic::new((3, 3, 3).try_into().unwrap()).unwrap();
-        schematic_1.register_content("something".to_string());
+        schematic_1.register_content("something".into());
 
         let mut schematic_2 = Schematic::new((3, 2, 2).try_into().unwrap()).unwrap();
-        let default_dirt = schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
                 (0, 0, 0).try_into().unwrap(),
                 schematic_2.dimensions,
-                &Node::with_content_id(default_dirt),
+                &Node::with_content_name("default:dirt".into()),
             )
             .unwrap();
 
@@ -315,15 +325,14 @@ mod tests {
     #[test]
     fn test_merge_small_schematic_into_larger() {
         let mut schematic_1 = Schematic::new((8, 8, 8).try_into().unwrap()).unwrap();
-        schematic_1.register_content("something".to_string());
+        schematic_1.register_content("something".into());
 
         let mut schematic_2 = Schematic::new((2, 2, 2).try_into().unwrap()).unwrap();
-        schematic_2.register_content("default:dirt".to_string());
         schematic_2
             .fill(
                 (0, 0, 0).try_into().unwrap(),
                 (2, 2, 2).try_into().unwrap(),
-                &Node::with_content_id(1),
+                &Node::with_content_name("default:dirt".into()),
             )
             .unwrap();
 
@@ -340,11 +349,11 @@ mod tests {
 
     #[rstest]
     fn test_merge_optional_node_doesnt_overwrite_existing(mut schematic: Schematic) {
-        let content_id = schematic.register_content("default:dry_dirt".to_string());
-        let mut optional_node = Node::with_content_id(content_id);
-        optional_node.probability = SpawnProbability::Never;
+        let content_id = schematic.register_content("default:dry_dirt".into());
+        let mut optional_node = RawNode::with_content_id(content_id);
+        optional_node.spawn_probability = SpawnProbability::Never.into();
         let optional_schematic =
-            Schematic::with_nodes((1, 1, 1).try_into().unwrap(), vec![optional_node]).unwrap();
+            Schematic::with_raw_nodes((1, 1, 1).try_into().unwrap(), vec![optional_node]).unwrap();
 
         schematic
             .merge(&optional_schematic, (0, 0, 0).try_into().unwrap())
@@ -352,24 +361,23 @@ mod tests {
 
         let node = schematic.node_at((0, 0, 0).try_into().unwrap()).unwrap();
         assert_eq!(
-            schematic.content_name_for_id(node.content_id).unwrap(),
-            "default:cobble",
+            node.content_name, "default:cobble",
             "The original node should not have been overwritten by this default:dry_dirt node"
         );
     }
 
     #[fixture]
     fn schematic() -> Schematic {
-        let mut schematic = Schematic::with_nodes(
+        let mut schematic = Schematic::with_raw_nodes(
             (3, 2, 3).try_into().unwrap(),
             (1..=18)
-                .map(|i| Node::new(i, SpawnProbability::Always, true, 0))
-                .collect(),
+                .map(|i| RawNode::new(i, SpawnProbability::Always, true, 0))
+                .collect::<Vec<RawNode>>(),
         )
         .unwrap();
-        schematic.register_content("default:cobble".to_string());
+        schematic.register_content("default:cobble".into());
         (2..=schematic.num_nodes()).for_each(|i| {
-            schematic.register_content(format!("content:{i}"));
+            schematic.register_content(format!("content:{i}").into());
         });
 
         schematic

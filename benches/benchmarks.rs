@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use luanti_mts::{MapVector, Node, Schematic};
+use luanti_mts::{MapVector, Node, NodeSpace, Schematic};
 
 pub fn schematic_merge(c: &mut Criterion) {
     let schematic_sizes: Vec<u16> = (1..=8).map(|pow| 2_u16.pow(pow)).collect();
@@ -15,12 +15,12 @@ pub fn schematic_merge(c: &mut Criterion) {
         let mut schematic_2 =
             Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap())
                 .unwrap();
-        let content_index = schematic_2.register_content("default:cobble".to_string());
+
         schematic_2
             .fill(
                 MapVector::new(0, 0, 0).unwrap(),
                 schematic_2.dimensions,
-                &Node::with_content_id(content_index),
+                &Node::with_content_name("default:cobble".into()),
             )
             .unwrap();
 
@@ -45,8 +45,7 @@ pub fn schematic_fill(c: &mut Criterion) {
         let mut schematic =
             Schematic::new(MapVector::new(schematic_size, schematic_size, schematic_size).unwrap())
                 .unwrap();
-        let content_index = schematic.register_content("default:cobble".to_string());
-        let node = Node::with_content_id(content_index);
+        let node = Node::with_content_name("default:cobble".into());
 
         group.throughput(criterion::Throughput::Elements(schematic.num_nodes() as u64));
         group.bench_function(BenchmarkId::from_parameter(schematic_size), |b| {

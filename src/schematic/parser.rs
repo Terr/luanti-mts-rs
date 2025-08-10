@@ -19,7 +19,7 @@ use winnow::error::{ContextError, StrContext, StrContextValue};
 use winnow::token::literal;
 
 use crate::error::Error;
-use crate::node::{Node, SpawnProbability};
+use crate::node::{RawNode, SpawnProbability};
 use crate::vector::MapVector;
 
 use super::Schematic;
@@ -42,11 +42,11 @@ pub(super) fn parse(input: &[u8]) -> Result<Schematic, Error> {
     let node_stream = &mut BStr::new(&decompressed);
 
     let num_nodes = dimensions.volume();
-    let nodes = parse_nodes(node_stream, num_nodes, name_ids.len())?;
+    let raw_nodes = parse_nodes(node_stream, num_nodes, name_ids.len())?;
 
     // TODO Come up with a better constructor that also takes the layer probabilities and content
     // names
-    let mut schematic = Schematic::with_nodes(dimensions, nodes)?;
+    let mut schematic = Schematic::with_raw_nodes(dimensions, raw_nodes)?;
     schematic.layer_probabilities = layer_probabilities;
     schematic.content_names = name_ids;
 
@@ -57,7 +57,7 @@ fn parse_nodes(
     node_stream: &mut &BStr,
     num_nodes: usize,
     num_name_ids: usize,
-) -> Result<Vec<Node>, ContextError> {
+) -> Result<Vec<RawNode>, ContextError> {
     let node_contents: Vec<u16> =
         repeat(num_nodes, be_u16.verify(|v| (*v as usize) < num_name_ids))
             .context(parser_expected("node contents to point to a valid name_id"))
@@ -76,15 +76,12 @@ fn parse_nodes(
         .context(parser_expected("valid Param2 values for nodes"))
         .parse_next(node_stream)?;
 
-    let nodes: Vec<Node> = zip(node_contents, zip(node_params1, node_params2))
-        .map(|(content, ((force_placement, probability), param2))| {
-            Node::new(
-                content,
-                SpawnProbability::from(probability),
-                force_placement,
-                param2,
-            )
-        })
+    let nodes: Vec<RawNode> = zip(node_contents, zip(node_params1, node_params2))
+        .map(
+            |(content, ((force_placement, spawn_probability), param2))| {
+                RawNode::new(content, spawn_probability.into(), force_placement, param2)
+            },
+        )
         .collect();
 
     Ok(nodes)
@@ -170,6 +167,8 @@ fn is_valid_probability(value: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::node::NodeSpace;
+
     use super::*;
 
     #[test]

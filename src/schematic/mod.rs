@@ -2,10 +2,12 @@ mod editing;
 mod parser;
 mod serializer;
 
+use std::borrow::Cow;
+
 use ndarray::{Array3, ArrayView3, Axis, Dim};
 
 use crate::error::Error;
-use crate::node::{AnnotatedNode, Node, NodeSpace, SpawnProbability};
+use crate::node::{AnnotatedNode, Node, NodeSpace, RawNode, SpawnProbability};
 use crate::vector::MapVector;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -18,25 +20,32 @@ pub struct Schematic {
     ///
     /// Examples of names are: "air", "default:cobble", "mcl_core:quartz"
     pub(crate) content_names: Vec<String>,
-    pub(crate) nodes: Array3<Node>,
+    pub(crate) nodes: Array3<RawNode>,
 }
 
 impl Schematic {
     pub fn new(dimensions: MapVector) -> Result<Self, Error> {
         let nodes = vec![
-            Node {
-                content_id: 0,
-                probability: SpawnProbability::Always,
+            RawNode {
+                content_id: 0, // "air"
+                spawn_probability: SpawnProbability::Always.into(),
                 force_placement: false,
                 param2: 0
             };
             dimensions.volume()
         ];
 
-        Self::with_nodes(dimensions, nodes)
+        Self::with_raw_nodes(dimensions, nodes)
     }
 
-    pub fn with_nodes(dimensions: MapVector, nodes: Vec<Node>) -> Result<Self, Error> {
+    /// Since `RawNode` do not contain the actual content names, using this constructor requires
+    /// the caller to `register_content()` all the content names that the `RawNode`s content IDs
+    /// point to and update those IDs, if necessary.
+    pub fn with_raw_nodes<T: Into<Vec<RawNode>>>(
+        dimensions: MapVector,
+        nodes: T,
+    ) -> Result<Self, Error> {
+        let nodes = nodes.into();
         let num_nodes = nodes.len();
         let nodes = Array3::from_shape_vec(dimensions.as_shape(), nodes).map_err(|_| {
             Error::IncorrectNodeCount {
@@ -48,7 +57,7 @@ impl Schematic {
         Ok(Self::with_array3(dimensions, nodes))
     }
 
-    pub fn with_array3(dimensions: MapVector, nodes: Array3<Node>) -> Self {
+    fn with_array3(dimensions: MapVector, nodes: Array3<RawNode>) -> Self {
         Schematic {
             version: 4,
             // Dimensions could be created from `nodes.shape()`, but since creating a `MapVector`
@@ -65,16 +74,8 @@ impl Schematic {
         parser::parse(input.as_ref())
     }
 
-    pub fn annotated_nodes(&self) -> AnnotatedNodeIterator<'_> {
+    pub fn annotated_nodes<'schematic>(&'schematic self) -> AnnotatedNodeIterator<'schematic> {
         AnnotatedNodeIterator::from_schematic(self)
-    }
-
-    pub fn node_at(&self, coordinates: MapVector) -> Option<&Node> {
-        self.nodes.get(coordinates.as_shape())
-    }
-
-    pub fn num_nodes(&self) -> usize {
-        self.nodes.len()
     }
 
     /// Registers a content name in the `Schematic`. Checks for duplicates.
@@ -84,7 +85,7 @@ impl Schematic {
     /// # Panics
     ///
     /// Panics when exceeding the limit of 65536 unique content names
-    pub fn register_content(&mut self, name: String) -> u16 {
+    pub fn register_content(&mut self, name: Cow<'_, str>) -> u16 {
         // TODO Convert this field to a HashMap? But that would not be good for
         // `AnnotatedNodeIterator`
 
@@ -95,23 +96,11 @@ impl Schematic {
                     "A Schematic can only contain 65536 kinds of content"
                 );
 
-                self.content_names.push(name);
+                self.content_names.push(name.into_owned());
                 (self.content_names.len() - 1) as u16
             }
             Some(content_id) => content_id,
         }
-    }
-
-    pub fn content_id_for_name(&self, name: &str) -> Option<u16> {
-        self.content_names
-            .iter()
-            .enumerate()
-            .find(|(_index, content_name)| *content_name == name)
-            .map(|(index, _content_name)| index as u16)
-    }
-
-    pub fn content_name_for_id(&self, id: u16) -> Option<&String> {
-        self.content_names.get(id as usize)
     }
 
     /// Checks if the `Schematic` has enough `Nodes` to fill its entire space, that all
@@ -131,11 +120,33 @@ impl Schematic {
 
         for node in &self.nodes {
             if node.content_id as usize >= self.content_names.len() {
-                return Err(Error::InvalidContentNameIndex(node.content_id));
+                return Err(Error::InvalidContentIndex(node.content_id));
             }
         }
 
         Ok(())
+    }
+
+    /// Places the provided `Node` at `coordinates` in the schematic, overwriting whatever is there
+    /// now.
+    pub fn place_node(&mut self, node: &Node, coordinates: MapVector) -> Result<(), Error> {
+        if coordinates >= self.dimensions {
+            return Err(Error::OutOfBounds);
+        }
+
+        let raw_node = self.convert_node_to_raw_node(node);
+        self.nodes[coordinates.as_shape()] = raw_node;
+
+        Ok(())
+    }
+
+    /// Converts a `Node` to a `RawNode`, and registers the `Node`'s content in this `Schematic` if
+    /// it isn't part of this schematic already.
+    pub fn convert_node_to_raw_node(&mut self, node: &Node) -> RawNode {
+        self.register_content(node.content_name.clone());
+
+        node.to_raw_node(self)
+            .expect("Node's content to be registered in this schematic")
     }
 
     /// Rotates the `Schematic` 90 degrees to the left along its Y-axis
@@ -198,11 +209,13 @@ impl Schematic {
         fill_space: MapVector,
         node: &Node,
     ) -> Result<(), Error> {
-        editing::fill(self, from_position, fill_space, node)
+        let raw_node = self.convert_node_to_raw_node(node);
+
+        editing::fill(self, from_position, fill_space, raw_node)
     }
 
-    /// Copies the current `Schematic` and adds a new layer of `fill_with_node` inserted on given
-    /// `y` axis.
+    /// Copies the current `Schematic` and adds a new layer with copies of `fill_with_node`
+    /// inserted on given `y` axis.
     pub fn insert_layer(&self, y: u16, fill_with_node: &Node) -> Result<Schematic, Error> {
         editing::insert_layer(self, y, fill_with_node)
     }
@@ -257,26 +270,36 @@ impl<'schematic> NodeSpace<'schematic> for Schematic {
         self.content_names.iter().map(String::as_str)
     }
 
+    fn content_id_for_name(&'schematic self, name: &str) -> Option<u16> {
+        // TODO This is not very efficient. A map between name and ID, or something else, would
+        // speed this up.
+        self.content_names
+            .iter()
+            .enumerate()
+            .find(|(_index, content_name)| *content_name == name)
+            .map(|(index, _content_name)| index as u16)
+    }
+
+    fn content_name_for_id(&'schematic self, id: u16) -> Option<&'schematic str> {
+        self.content_names.get(id as usize).map(String::as_str)
+    }
+
     fn dimensions(&'schematic self) -> MapVector {
         self.dimensions
     }
 
-    fn nodes(&'schematic self) -> ArrayView3<'schematic, Node> {
+    fn num_nodes(&'schematic self) -> usize {
+        self.nodes.len()
+    }
+
+    fn nodes(&'schematic self) -> ArrayView3<'schematic, RawNode> {
         self.nodes.view()
     }
-}
 
-impl<'schematic> NodeSpace<'schematic> for &'schematic Schematic {
-    fn content_names(&self) -> impl Iterator<Item = &str> {
-        self.content_names.iter().map(String::as_str)
-    }
+    fn node_at(&'schematic self, coordinates: MapVector) -> Option<Node<'schematic>> {
+        let raw_node = self.nodes.get(coordinates.as_shape())?;
 
-    fn dimensions(&self) -> MapVector {
-        self.dimensions
-    }
-
-    fn nodes(&self) -> ArrayView3<'schematic, Node> {
-        self.nodes.view()
+        raw_node.to_node(self).ok()
     }
 }
 
@@ -285,7 +308,7 @@ impl<'schematic> NodeSpace<'schematic> for &'schematic Schematic {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SchematicRef<'schematic> {
     schematic: &'schematic Schematic,
-    nodes_view: ArrayView3<'schematic, Node>,
+    nodes_view: ArrayView3<'schematic, RawNode>,
 }
 
 impl<'schematic> SchematicRef<'schematic> {
@@ -302,26 +325,30 @@ impl<'schematic> NodeSpace<'schematic> for SchematicRef<'schematic> {
         self.schematic.content_names()
     }
 
+    fn content_id_for_name(&'schematic self, name: &str) -> Option<u16> {
+        self.schematic.content_id_for_name(name)
+    }
+
+    fn content_name_for_id(&'schematic self, id: u16) -> Option<&'schematic str> {
+        self.schematic.content_name_for_id(id)
+    }
+
     fn dimensions(&'schematic self) -> MapVector {
         self.schematic.dimensions
     }
 
-    fn nodes(&'schematic self) -> ArrayView3<'schematic, Node> {
+    fn num_nodes(&'schematic self) -> usize {
+        self.nodes_view.len()
+    }
+
+    fn nodes(&'schematic self) -> ArrayView3<'schematic, RawNode> {
         self.nodes_view
     }
-}
 
-impl<'schematic> NodeSpace<'schematic> for &SchematicRef<'schematic> {
-    fn content_names(&self) -> impl Iterator<Item = &str> {
-        self.schematic.content_names()
-    }
+    fn node_at(&'schematic self, coordinates: MapVector) -> Option<Node<'schematic>> {
+        let raw_node = self.nodes_view.get(coordinates.as_shape())?;
 
-    fn dimensions(&self) -> MapVector {
-        self.schematic.dimensions
-    }
-
-    fn nodes(&self) -> ArrayView3<'schematic, Node> {
-        self.nodes_view
+        raw_node.to_node(self).ok()
     }
 }
 
@@ -332,10 +359,10 @@ pub struct AnnotatedNodeIterator<'schematic> {
     current_y: u16,
     current_z: u16,
     schematic: &'schematic Schematic,
-    nodes_iter: ndarray::iter::Iter<'schematic, Node, Dim<[usize; 3]>>,
+    nodes_iter: ndarray::iter::Iter<'schematic, RawNode, Dim<[usize; 3]>>,
 }
 
-impl<'schematic> AnnotatedNodeIterator<'_> {
+impl<'schematic> AnnotatedNodeIterator<'schematic> {
     fn from_schematic(schematic: &'schematic Schematic) -> AnnotatedNodeIterator<'schematic> {
         AnnotatedNodeIterator {
             current_x: 0,
@@ -352,21 +379,15 @@ impl<'schematic> Iterator for AnnotatedNodeIterator<'schematic> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = match self.nodes_iter.next() {
-            Some(node) => {
+            Some(raw_node) => {
                 let coordinates =
                     MapVector::new(self.current_x, self.current_y, self.current_z).ok()?;
 
-                let content_name = self
-                    .schematic
-                    .content_names
-                    .get(node.content_id as usize)
-                    .expect("node's content ID should point to a content name in the schematic.");
+                let node = raw_node.to_node(self.schematic).expect(
+                    "Raw node's content ID should point to a content name in the schematic.",
+                );
 
-                AnnotatedNode {
-                    coordinates,
-                    content_name,
-                    node,
-                }
+                AnnotatedNode { coordinates, node }
             }
             None => return None,
         };
@@ -399,39 +420,54 @@ mod tests {
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 0, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 0)]);
+        assert_eq!(
+            annotated_node.node,
+            schematic.nodes[(0, 0, 0)].to_node(&schematic).unwrap()
+        );
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 0, 1).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(0, 0, 1)]);
+        assert_eq!(
+            annotated_node.node,
+            schematic.nodes[(0, 0, 1)].to_node(&schematic).unwrap()
+        );
 
         let mut nodes_iter = nodes_iter.skip(1);
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (0, 1, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(0, 1, 0)]);
+        assert_eq!(
+            annotated_node.node,
+            schematic.nodes[(0, 1, 0)].to_node(&schematic).unwrap()
+        );
 
         let mut nodes_iter = nodes_iter.skip(2);
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (1, 0, 0).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(1, 0, 0)]);
+        assert_eq!(
+            annotated_node.node,
+            schematic.nodes[(1, 0, 0)].to_node(&schematic).unwrap()
+        );
 
         let mut nodes_iter = nodes_iter.skip(10);
 
         let annotated_node = nodes_iter.next().unwrap();
         assert_eq!(annotated_node.coordinates, (2, 1, 2).try_into().unwrap());
-        assert_eq!(annotated_node.node, &schematic.nodes[(2, 1, 2)]);
+        assert_eq!(
+            annotated_node.node,
+            schematic.nodes[(2, 1, 2)].to_node(&schematic).unwrap()
+        );
     }
 
     #[rstest]
     fn test_node_at(schematic: Schematic) {
         assert_eq!(
             schematic.node_at((0, 0, 0).try_into().unwrap()).unwrap(),
-            &schematic.nodes[(0, 0, 0)]
+            schematic.nodes[(0, 0, 0)].to_node(&schematic).unwrap(),
         );
 
         assert_eq!(
             schematic.node_at((1, 1, 1).try_into().unwrap()).unwrap(),
-            &schematic.nodes[(1, 1, 1)]
+            schematic.nodes[(1, 1, 1)].to_node(&schematic).unwrap(),
         );
 
         assert_eq!(schematic.node_at((999, 999, 999).try_into().unwrap()), None);
@@ -448,6 +484,58 @@ mod tests {
 
         schematic.nodes.first_mut().unwrap().content_id = 0;
         assert!(schematic.validate().is_ok());
+    }
+
+    #[test]
+    fn test_convert_node_to_raw_node() {
+        let mut schematic = Schematic::with_raw_nodes(
+            (1, 1, 1).try_into().unwrap(),
+            vec![RawNode::new(0, SpawnProbability::Always, true, 0)],
+        )
+        .unwrap();
+        schematic.register_content("default:cobble".into());
+
+        let node = Node::new(
+            "default:stone".to_string().into(),
+            SpawnProbability::Always,
+            true,
+            0,
+        );
+
+        schematic.convert_node_to_raw_node(&node);
+
+        assert_eq!(
+            schematic.content_names.len(),
+            3,
+            "default:stone should have been registered as the 3rd content"
+        );
+    }
+
+    #[rstest]
+    fn test_place_node(mut schematic: Schematic) {
+        let node = Node {
+            content_name: "default:cobble".into(),
+            ..Default::default()
+        };
+        let coordinates = (0, 1, 2).try_into().unwrap();
+
+        schematic.place_node(&node, coordinates).unwrap();
+
+        let found_node = schematic.node_at(coordinates).unwrap();
+
+        assert_eq!(node, found_node);
+    }
+
+    #[test]
+    fn test_place_node_out_of_bounds() {
+        let mut schematic = Schematic::new((1, 1, 1).try_into().unwrap()).unwrap();
+        let node = Node {
+            content_name: "default:cobble".into(),
+            ..Default::default()
+        };
+        let coordinates = (1, 1, 1).try_into().unwrap();
+
+        schematic.place_node(&node, coordinates).unwrap_err();
     }
 
     #[rstest]
@@ -504,18 +592,32 @@ mod tests {
 
     #[fixture]
     fn schematic() -> Schematic {
-        let mut schematic = Schematic::with_nodes(
+        let mut schematic = Schematic::with_raw_nodes(
             (3, 2, 3).try_into().unwrap(),
             (1..=18)
-                .map(|i| Node::new(i, SpawnProbability::Always, true, 0))
-                .collect(),
+                .map(|i| RawNode::new(i, SpawnProbability::Always, true, 0))
+                .collect::<Vec<RawNode>>(),
         )
         .unwrap();
-        schematic.register_content("default:cobble".to_string());
+        schematic.register_content("default:cobble".into());
         (2..=schematic.num_nodes()).for_each(|i| {
-            schematic.register_content(format!("content:{i}"));
+            schematic.register_content(format!("content:{i}").into());
         });
 
         schematic
+    }
+
+    #[test]
+    fn test_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Schematic>();
+        assert_send::<SchematicRef>();
+    }
+
+    #[test]
+    fn test_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<Schematic>();
+        assert_sync::<SchematicRef>();
     }
 }

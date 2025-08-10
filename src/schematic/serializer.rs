@@ -3,6 +3,8 @@ use std::io::Write;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 
+use crate::node::NodeSpace;
+
 use super::Schematic;
 use super::parser::MTS_MAGIC_BYTES;
 
@@ -42,7 +44,7 @@ pub(super) fn to_bytes(schematic: &Schematic) -> Vec<u8> {
         schematic
             .nodes
             .iter()
-            .map(|node| u8::from(node.force_placement) << 7 | u8::from(node.probability)),
+            .map(|raw_node| u8::from(raw_node.force_placement) << 7 | raw_node.spawn_probability),
     );
 
     node_data.extend(schematic.nodes.iter().map(|node| node.param2));
