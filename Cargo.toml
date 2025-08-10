@@ -3,6 +3,7 @@ name = "luanti-mts"
 description = "Read and write Luanti (formerly Minetest) schematic files (MTS)"
 version = "0.1.0"
 license = "MIT"
+readme = "README.md"
 edition = "2024"
 rust-version = "1.88"
 
