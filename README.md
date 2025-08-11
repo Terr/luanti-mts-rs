@@ -3,7 +3,7 @@
 Rust library for working with Luanti Schematics files (MTS). Luanti was
 formerly known as Minetest.
 
-More information about schematics and how to use :
+More information about schematics and how to use them:
 
 * [https://docs.luanti.org/for-creators/schematic/]()
 * [https://content.luanti.org/packages/Wuzzy/schemedit/]()
