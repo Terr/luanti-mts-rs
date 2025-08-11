@@ -7,18 +7,26 @@ use crate::vector::MapVector;
 
 /// Trait for interacting with a 3D space of nodes.
 pub trait NodeSpace<'nodes> {
+    /// Iterator for the content names that nodes (can) use.
     fn content_names(&'nodes self) -> impl Iterator<Item = &'nodes str>;
 
+    /// Returns the content ID for the given content `name`. Used by [RawNode]s to point to point
+    /// to their contents.
     fn content_id_for_name(&'nodes self, name: &str) -> Option<u16>;
 
+    /// Returns the content name for the given content `id`.
     fn content_name_for_id(&'nodes self, id: u16) -> Option<&'nodes str>;
 
+    /// Returns the size of the node space in 3D dimensions.
     fn dimensions(&'nodes self) -> MapVector;
 
+    /// The number of nodes contained in this node space.
     fn num_nodes(&'nodes self) -> usize;
 
+    /// Iterator for all [RawNode] contained in this node space.
     fn nodes(&'nodes self) -> ArrayView3<'nodes, RawNode>;
 
+    /// Returns the node at the specified `coordinates` as a [Node].
     fn node_at(&'nodes self, coordinates: MapVector) -> Option<Node<'nodes>>;
 }
 
