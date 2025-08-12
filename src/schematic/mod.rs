@@ -11,6 +11,7 @@ use crate::node::{AnnotatedNode, Node, NodeSpace, RawNode, SpawnProbability};
 use crate::vector::MapVector;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Schematic {
     pub(crate) version: u16,
     pub dimensions: MapVector,

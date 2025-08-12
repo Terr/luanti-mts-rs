@@ -8,6 +8,12 @@ More information about schematics and how to use them:
 * [https://docs.luanti.org/for-creators/schematic/]()
 * [https://content.luanti.org/packages/Wuzzy/schemedit/]()
 
+# Crate feature flags
+
+- (optional) serde: enables `serde` 1.x support for the crate's data types
+
+# Background
+
 This was born from one of my personal projects in which I wanted to merge
 (thousands of) smaller schematics into a bigger one. That's why the main
 feature of the library is `Schematic::merge()` method.

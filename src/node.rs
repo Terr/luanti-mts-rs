@@ -31,6 +31,7 @@ pub trait NodeSpace<'nodes> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Node<'name> {
     /// Name that identifies the content (material, item) of this `Node`.
     ///
@@ -100,6 +101,7 @@ impl<'name> Node<'name> {
 /// data in this struct is (naturally) stored per node, where in MTS files each field is stored as
 /// sequence of arrays (e.g. first all node contents, then param1 of all nodes, etc.)
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RawNode {
     /// Index to `content_names` array in the `Schematic`.
     pub(crate) content_id: u16,
@@ -171,6 +173,7 @@ pub struct AnnotatedNode<'node> {
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Copy, Clone, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SpawnProbability {
     Never,
     #[default]

@@ -8,6 +8,7 @@ const MAX_MAP_DIMENSION: u16 = 62013;
 ///
 /// "Map-aware" as it checks its values against the maximum map/schematic size of Luanti (see `MAX_MAP_DIMENSION`)
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapVector {
     pub x: u16,
     pub y: u16,

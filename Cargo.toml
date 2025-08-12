@@ -7,9 +7,13 @@ readme = "README.md"
 edition = "2024"
 rust-version = "1.88"
 
+[features]
+serde = ["dep:serde", "ndarray/serde"]
+
 [dependencies]
 flate2 = "1.1.2"
 ndarray = "0.16.1"
+serde = { version = "1.0.219", optional = true, features = ["derive"] }
 thiserror = "2.0.12"
 winnow = "0.7.12"
 
