@@ -10,7 +10,7 @@ More information about schematics and how to use them:
 
 # Crate feature flags
 
-- (optional) serde: enables `serde` 1.x support for the crate's data types
+- serde (optional): enables [serde](https://crates.io/crates/serde) 1.x support for the crate's data types
 
 # Background
 
